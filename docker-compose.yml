@@ -101,7 +101,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__IdentityDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=identity"
+      ConnectionStrings__IdentityDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=identity;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -134,7 +134,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__StudentDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=student"
+      ConnectionStrings__StudentDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=student;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
       BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-http://localhost:10000/devstoreaccount1}
@@ -163,7 +163,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__StaffDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=staff"
+      ConnectionStrings__StaffDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=staff;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -187,7 +187,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__AttendanceDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=attendance"
+      ConnectionStrings__AttendanceDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=attendance;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -211,7 +211,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__AcademicDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=academic"
+      ConnectionStrings__AcademicDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=academic;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -237,7 +237,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__ExaminationDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=examination"
+      ConnectionStrings__ExaminationDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=examination;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
       BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-http://localhost:10000/devstoreaccount1}
@@ -267,7 +267,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__FeeDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=fee"
+      ConnectionStrings__FeeDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=fee;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
       BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-http://localhost:10000/devstoreaccount1}
@@ -296,7 +296,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__CommunicationDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=communication"
+      ConnectionStrings__CommunicationDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=communication;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -320,7 +320,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__LibraryDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=library"
+      ConnectionStrings__LibraryDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=library;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -344,7 +344,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__TransportDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=transport"
+      ConnectionStrings__TransportDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=transport;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -370,7 +370,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__NotificationDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=notification"
+      ConnectionStrings__NotificationDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=notification;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -401,7 +401,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__ReportingDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=reporting"
+      ConnectionStrings__ReportingDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=reporting;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
