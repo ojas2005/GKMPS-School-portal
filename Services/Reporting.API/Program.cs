@@ -11,6 +11,7 @@ using Serilog;
 using SchoolERP.Shared.ExceptionHandling;
 using SchoolERP.Shared.Logging;
 using SchoolERP.Reporting.Clients;
+using SchoolERP.Reporting.Handlers;
 using SchoolERP.Reporting.Data;
 using SchoolERP.Reporting.Repositories;
 using SchoolERP.Reporting.Repositories.Interfaces;
@@ -35,6 +36,9 @@ builder.Services.AddStackExchangeRedisCache(options =>
 builder.Services.AddScoped<IReportSnapshotRepository, ReportSnapshotRepository>();
 builder.Services.AddScoped<IReportingService, ReportingService>();
 
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<AuthForwardingHandler>();
+
 // Polly retry + circuit breaker wrapping every inter-service HTTP call, per the
 // non-functional requirement ("Polly retry + circuit breaker on all inter-service calls").
 static IAsyncPolicy<HttpResponseMessage> RetryPolicy() =>
@@ -50,6 +54,7 @@ builder.Services.AddHttpClient<IStudentServiceClient, StudentServiceClient>(clie
     client.BaseAddress = new Uri(builder.Configuration["Services:StudentApiBaseUrl"] ?? "http://student-api:8080");
     client.Timeout = TimeSpan.FromSeconds(10);
 })
+.AddHttpMessageHandler<AuthForwardingHandler>()
 .AddPolicyHandler(RetryPolicy())
 .AddPolicyHandler(CircuitBreakerPolicy());
 
@@ -58,6 +63,7 @@ builder.Services.AddHttpClient<IFeeServiceClient, FeeServiceClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:FeeApiBaseUrl"] ?? "http://fee-api:8080");
     client.Timeout = TimeSpan.FromSeconds(10);
 })
+.AddHttpMessageHandler<AuthForwardingHandler>()
 .AddPolicyHandler(RetryPolicy())
 .AddPolicyHandler(CircuitBreakerPolicy());
 

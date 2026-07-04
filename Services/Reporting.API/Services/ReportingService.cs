@@ -37,7 +37,7 @@ public class ReportingService : IReportingService
     public async Task<EnrollmentReportResponse> GetEnrollmentReportAsync(Guid generatedByUserId, CancellationToken ct = default)
     {
         var counts = await _studentClient.GetActiveCountByClassAsync(ct);
-        var response = new EnrollmentReportResponse(counts, DateTime.UtcNow);
+        var response = new EnrollmentReportResponse(counts.Values.Sum(), counts, DateTime.UtcNow);
 
         await PersistSnapshotAsync("EnrollmentByClass", null, null, response, generatedByUserId, ct);
 
