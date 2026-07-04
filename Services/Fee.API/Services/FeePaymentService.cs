@@ -154,7 +154,8 @@ public class FeePaymentService : IFeePaymentService
             var payment = await _payments.FindByIdAsync(transaction.FeePaymentId, ct)
                 ?? throw new KeyNotFoundException("Fee payment not found.");
 
-            var document = new ReceiptDocument(transaction.ReceiptNumber, transaction.Amount, transaction.PaymentMethod, transaction.PaidAtUtc, payment.StudentId, _schoolName);
+            var pendingAmount = Math.Max(0, payment.TotalAmount - payment.PaidAmount - payment.WaiverAmount);
+            var document = new ReceiptDocument(transaction.ReceiptNumber, transaction.Amount, transaction.PaymentMethod, transaction.PaidAtUtc, payment.StudentId, _schoolName, pendingAmount);
             var pdfBytes = document.GeneratePdf();
 
             var blobPath = $"{payment.StudentId}/{transaction.Id}.pdf";

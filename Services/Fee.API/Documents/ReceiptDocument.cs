@@ -12,8 +12,9 @@ public class ReceiptDocument : IDocument
     private readonly DateTime _paidAtUtc;
     private readonly Guid _studentId;
     private readonly string _schoolName;
+    private readonly decimal _pendingAmount;
 
-    public ReceiptDocument(string receiptNumber, decimal amount, string paymentMethod, DateTime paidAtUtc, Guid studentId, string schoolName)
+    public ReceiptDocument(string receiptNumber, decimal amount, string paymentMethod, DateTime paidAtUtc, Guid studentId, string schoolName, decimal pendingAmount)
     {
         _receiptNumber = receiptNumber;
         _amount = amount;
@@ -21,6 +22,7 @@ public class ReceiptDocument : IDocument
         _paidAtUtc = paidAtUtc;
         _studentId = studentId;
         _schoolName = schoolName;
+        _pendingAmount = pendingAmount;
     }
 
     public DocumentMetadata GetMetadata() => DocumentMetadata.Default;
@@ -48,6 +50,7 @@ public class ReceiptDocument : IDocument
                 col.Item().Text($"Amount Paid: {_amount:0.##}");
                 col.Item().Text($"Payment Method: {_paymentMethod}");
                 col.Item().Text($"Paid On: {_paidAtUtc:d MMMM yyyy HH:mm} UTC");
+                col.Item().Text($"Pending Fee: {_pendingAmount:0.##}").SemiBold();
             });
 
             page.Footer().AlignCenter().Text(x =>
