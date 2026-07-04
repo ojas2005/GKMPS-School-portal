@@ -32,6 +32,14 @@ public class User : BaseEntity
 
     public DateTime? LastLoginAtUtc { get; set; }
 
+    /// <summary>Consecutive failed password attempts since the last success or lockout
+    /// reset. Reset to 0 on a successful login.</summary>
+    public int FailedLoginAttempts { get; set; } = 0;
+
+    /// <summary>Set once <see cref="FailedLoginAttempts"/> crosses the threshold; login is
+    /// refused (even with the correct password) until this passes.</summary>
+    public DateTime? LockoutEndUtc { get; set; }
+
     /// <summary>Foreign key into the owning domain service's own table (StudentId, TeacherId, ...). Not an EF navigation -- cross-service FKs are looked up over HTTP, never joined.</summary>
     public Guid? LinkedProfileId { get; set; }
 

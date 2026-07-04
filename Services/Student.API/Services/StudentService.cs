@@ -136,5 +136,5 @@ public class StudentService : IStudentService
     }
 
     private static StudentSummary ToSummary(StudentProfile s) =>
-        new(s.Id, s.AdmissionNumber, s.FullName, s.DateOfBirth, s.Gender, s.ClassId, s.SectionId, s.Status, s.AdmissionDateUtc);
+        new(s.Id, s.LinkedUserId, s.AdmissionNumber, s.FullName, s.DateOfBirth, s.Gender, s.ClassId, s.SectionId, s.Status, s.AdmissionDateUtc);
 }

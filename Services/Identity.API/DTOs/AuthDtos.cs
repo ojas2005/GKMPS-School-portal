@@ -38,3 +38,5 @@ public record AuthResult(
     string? ClassTeacherOfSectionId = null);
 
 public record UserSummary(Guid Id, string Email, string FullName, string Role, bool IsActive, DateTime? LastLoginAtUtc, string? Username = null);
+
+public record SetPasswordRequest([Required, MinLength(8)] string NewPassword);

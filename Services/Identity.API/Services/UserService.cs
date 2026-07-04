@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using SchoolERP.Identity.DTOs;
 using SchoolERP.Identity.Entities;
@@ -11,11 +12,14 @@ namespace SchoolERP.Identity.Services;
 public class UserService : IUserService
 {
     private readonly IUserRepository _users;
+    private readonly IRefreshTokenRepository _refreshTokens;
+    private readonly PasswordHasher<User> _passwordHasher = new();
     private readonly ILogger<UserService> _logger;
 
-    public UserService(IUserRepository users, ILogger<UserService> logger)
+    public UserService(IUserRepository users, IRefreshTokenRepository refreshTokens, ILogger<UserService> logger)
     {
         _users = users;
+        _refreshTokens = refreshTokens;
         _logger = logger;
     }
 
@@ -55,6 +59,24 @@ public class UserService : IUserService
             actorUserId, actorRole, userId,
             JsonSerializer.Serialize(new { before.IsActive }),
             JsonSerializer.Serialize(new { IsActive = isActive }));
+    }
+
+    public async Task SetPasswordAsync(Guid userId, string newPassword, string actorUserId, string actorRole, CancellationToken ct = default)
+    {
+        var user = await _users.FindByIdAsync(userId, ct)
+            ?? throw new KeyNotFoundException("User not found.");
+
+        var newHash = _passwordHasher.HashPassword(user, newPassword);
+        await _users.SetPasswordHashAsync(userId, newHash, ct);
+
+        // Force re-login everywhere -- a session issued under the old password shouldn't
+        // survive an admin-initiated reset.
+        await _refreshTokens.RevokeAllForUserAsync(userId, ct);
+
+        // Audit trail -- never log the password itself, only that it changed.
+        _logger.LogInformation(
+            "AUDIT actor={ActorUserId} role={ActorRole} action=User.PasswordReset entity=User entityId={UserId}",
+            actorUserId, actorRole, userId);
     }
 
     private static UserSummary ToSummary(User u) =>

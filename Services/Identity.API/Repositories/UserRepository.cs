@@ -77,5 +77,34 @@ public class UserRepository : IUserRepository
                 .SetProperty(u => u.IsActive, isActive)
                 .SetProperty(u => u.UpdatedAtUtc, DateTime.UtcNow), ct);
 
+    public Task<int> SetPasswordHashAsync(Guid userId, string passwordHash, CancellationToken ct = default) =>
+        _db.Users
+            .Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(u => u.PasswordHash, passwordHash)
+                .SetProperty(u => u.UpdatedAtUtc, DateTime.UtcNow), ct);
+
+    public Task<int> IncrementFailedLoginAttemptsAsync(Guid userId, CancellationToken ct = default) =>
+        _db.Users
+            .Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(u => u.FailedLoginAttempts, u => u.FailedLoginAttempts + 1)
+                .SetProperty(u => u.UpdatedAtUtc, DateTime.UtcNow), ct);
+
+    public Task<int> SetLockoutAsync(Guid userId, DateTime lockoutEndUtc, CancellationToken ct = default) =>
+        _db.Users
+            .Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(u => u.LockoutEndUtc, lockoutEndUtc)
+                .SetProperty(u => u.UpdatedAtUtc, DateTime.UtcNow), ct);
+
+    public Task<int> ResetFailedLoginAsync(Guid userId, CancellationToken ct = default) =>
+        _db.Users
+            .Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(u => u.FailedLoginAttempts, 0)
+                .SetProperty(u => u.LockoutEndUtc, (DateTime?)null)
+                .SetProperty(u => u.UpdatedAtUtc, DateTime.UtcNow), ct);
+
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SchoolERP.Identity.DTOs;
 using SchoolERP.Identity.Services.Interfaces;
 using SchoolERP.Shared.Common;
 using System.Security.Claims;
@@ -43,6 +44,28 @@ public class UsersController : ControllerBase
         {
             await _userService.SetActiveStatusAsync(id, isActive, actorUserId, actorRole, ct);
             return Ok(ApiResponse<object>.Ok(new { }, "Status updated."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
+    // Owner/admin sets a new password directly (no knowledge of the old one needed) --
+    // mirrors how accounts are created in the first place: the owner chooses credentials
+    // and hands them to the person. Passwords are one-way hashed, so there is no "view"
+    // equivalent -- only reset.
+    [HttpPatch("{id:guid}/password")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin}")]
+    public async Task<IActionResult> SetPassword(Guid id, [FromBody] SetPasswordRequest request, CancellationToken ct)
+    {
+        var actorUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? "unknown";
+        var actorRole = User.FindFirstValue(ClaimTypes.Role) ?? "unknown";
+
+        try
+        {
+            await _userService.SetPasswordAsync(id, request.NewPassword, actorUserId, actorRole, ct);
+            return Ok(ApiResponse<object>.Ok(new { }, "Password updated."));
         }
         catch (KeyNotFoundException ex)
         {

@@ -18,7 +18,7 @@ public record CreateStudentRequest(
 public record ReassignClassRequest([Required] string ClassId, [Required] string SectionId);
 
 public record StudentSummary(
-    Guid Id, string AdmissionNumber, string FullName, DateTime DateOfBirth, string Gender,
+    Guid Id, Guid LinkedUserId, string AdmissionNumber, string FullName, DateTime DateOfBirth, string Gender,
     string ClassId, string SectionId, string Status, DateTime AdmissionDateUtc);
 
 public record UploadDocumentRequest([Required] string DocumentType, [Required] string ContentType);

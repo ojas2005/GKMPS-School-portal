@@ -32,6 +32,8 @@ public class AuthService : IAuthService
     private readonly JwtOptions _jwtOptions;
     private readonly ILogger<AuthService> _logger;
     private readonly string? _googleClientId;
+    private readonly int _maxFailedAttempts;
+    private readonly TimeSpan _lockoutDuration;
 
     public AuthService(
         IUserRepository users,
@@ -55,6 +57,8 @@ public class AuthService : IAuthService
         _jwtOptions = jwtOptions.Value;
         _logger = logger;
         _googleClientId = configuration["Authentication:Google:ClientId"];
+        _maxFailedAttempts = configuration.GetValue("AccountLockout:MaxFailedAttempts", 5);
+        _lockoutDuration = TimeSpan.FromMinutes(configuration.GetValue("AccountLockout:LockoutMinutes", 15));
     }
 
     // Resolves the linked student profile for self-service accounts (Student role).
@@ -117,13 +121,41 @@ public class AuthService : IAuthService
         if (!user.IsActive)
             throw new UnauthorizedAccessException("This account has been deactivated.");
 
+        // Checked before the password itself so a locked-out account never leaks whether
+        // the attempted password was actually correct.
+        if (user.LockoutEndUtc is { } lockoutEnd && lockoutEnd > DateTime.UtcNow)
+            throw new UnauthorizedAccessException(
+                $"Too many failed attempts. Try again after {lockoutEnd:HH:mm} UTC.");
+
         if (string.IsNullOrEmpty(user.PasswordHash))
             throw new UnauthorizedAccessException("This account signs in via Google only.");
 
         var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
         if (verifyResult == PasswordVerificationResult.Failed)
-            throw new UnauthorizedAccessException("Invalid login ID or password.");
+        {
+            // IncrementFailedLoginAttemptsAsync is a raw SQL increment (ExecuteUpdateAsync) --
+            // it bypasses the change tracker, so re-querying by Id afterwards on this same
+            // DbContext would just hand back the already-tracked `user` instance untouched
+            // (EF's identity map doesn't refresh tracked entities from a fresh row). Compute
+            // the post-increment count from the value already in hand instead of reloading.
+            var attempts = user.FailedLoginAttempts + 1;
+            await _users.IncrementFailedLoginAttemptsAsync(user.Id, ct);
 
+            if (attempts >= _maxFailedAttempts)
+            {
+                var lockoutEndUtc = DateTime.UtcNow.Add(_lockoutDuration);
+                await _users.SetLockoutAsync(user.Id, lockoutEndUtc, ct);
+                _logger.LogWarning(
+                    "AUDIT action=User.LockedOut entity=User entityId={UserId} attempts={Attempts} lockoutEndUtc={LockoutEndUtc}",
+                    user.Id, attempts, lockoutEndUtc);
+                throw new UnauthorizedAccessException(
+                    $"Too many failed attempts. Account locked until {lockoutEndUtc:HH:mm} UTC.");
+            }
+
+            throw new UnauthorizedAccessException("Invalid login ID or password.");
+        }
+
+        await _users.ResetFailedLoginAsync(user.Id, ct);
         await _users.UpdateLastLoginAsync(user.Id, DateTime.UtcNow, ct);
 
         return await IssueTokensAsync(user, ipAddress, ct);

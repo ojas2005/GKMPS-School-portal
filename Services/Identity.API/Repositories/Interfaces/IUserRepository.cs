@@ -23,5 +23,17 @@ public interface IUserRepository
     /// <summary>Atomic activate/deactivate toggle.</summary>
     Task<int> SetActiveStatusAsync(Guid userId, bool isActive, CancellationToken ct = default);
 
+    /// <summary>Atomic password-hash overwrite -- used for admin-initiated resets.</summary>
+    Task<int> SetPasswordHashAsync(Guid userId, string passwordHash, CancellationToken ct = default);
+
+    /// <summary>Atomic increment (SQL-level, not load-then-save) after a failed password check.</summary>
+    Task<int> IncrementFailedLoginAttemptsAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>Locks the account until <paramref name="lockoutEndUtc"/>.</summary>
+    Task<int> SetLockoutAsync(Guid userId, DateTime lockoutEndUtc, CancellationToken ct = default);
+
+    /// <summary>Clears the failure counter and any lockout -- called on a successful login.</summary>
+    Task<int> ResetFailedLoginAsync(Guid userId, CancellationToken ct = default);
+
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }
