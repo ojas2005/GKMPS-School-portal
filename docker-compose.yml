@@ -441,7 +441,33 @@ services:
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
       Cors__AllowedOrigins__0: ${FRONTEND_URL:-http://localhost:4200}
     ports:
-      - "5100:8080"
+      # Bound to loopback only: the gateway is reached from the outside world via
+      # Caddy (below), never directly. `curl http://localhost:5100/...` still works
+      # from *this* machine for local debugging -- it just isn't reachable from
+      # anywhere else, so there's no way to bypass TLS termination from outside.
+      - "127.0.0.1:5100:8080"
+
+  # TLS termination + reverse proxy in front of the gateway. Caddy handles cert
+  # issuance/renewal automatically (see Caddyfile) -- set DOMAIN in .env to a real,
+  # publicly-resolvable name and open 80/443 on this host to go live; until then it
+  # falls back to `localhost` with a local/internal cert, no ACME calls attempted.
+  caddy:
+    image: caddy:2-alpine
+    container_name: schoolerp-caddy
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
 
 volumes:
   postgres-data:
+  caddy-data:
+  caddy-config:

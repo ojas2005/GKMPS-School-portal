@@ -1,0 +1,17 @@
+# Reverse proxy + automatic TLS termination in front of the gateway.
+#
+# {$DOMAIN:localhost} reads the DOMAIN env var (see .env.example); with no real domain
+# set, it falls back to `localhost` and Caddy issues itself a local/internal cert (no
+# ACME attempt, so nothing to fail while there's no public DNS yet). The moment DOMAIN
+# is set to a real, publicly-resolvable name (and ports 80/443 on that server are
+# reachable from the internet for the ACME HTTP-01 challenge), Caddy automatically
+# requests and renews a real Let's Encrypt certificate for it -- no other config change
+# needed here.
+{$DOMAIN:localhost} {
+	# Everything is API traffic in this deployment -- the Angular frontend (separate
+	# repo) is built and hosted separately, so this proxy's only job is terminating
+	# TLS for the gateway.
+	reverse_proxy gateway:8080
+
+	encode gzip
+}
