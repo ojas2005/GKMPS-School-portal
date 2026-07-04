@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(zap curl *)",
+      "Bash(zap docker *)",
+      "Bash(rtk proxy *)",
+      "Bash(zap grep *)",
+      "Bash(zap wc *)",
+      "Bash(docker compose *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(zap read *)",
+      "Bash(zap ls *)",
+      "Bash(lsof -nP -iTCP:4200 -sTCP:LISTEN)",
+      "Bash(zap ps *)",
+      "Bash(kill 1043)",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\('student:',d['data']['id']\\)\")",
+      "Bash(docker info *)",
+      "Bash(open -a Docker)",
+      "Bash(break)",
+      "Bash(bash /tmp/gkmps_verify.sh)",
+      "Bash(python3 -m json.tool)",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\(d['data'].get\\('classId'\\), d['data'].get\\('sectionId'\\)\\)\")",
+      "Bash(zap npx *)",
+      "Bash(zap find *)",
+      "Bash(zap dotnet *)",
+      "Bash(dotnet tool *)",
+      "Bash(bash /tmp/gkmps_fee_salary_verify.sh)",
+      "Bash(python3 -c \"import sys,json;print\\('salary set:',json.load\\(sys.stdin\\)['data']['monthlySalary']\\)\")",
+      "Bash(python3 -c \"import sys,json;print\\('paid:',json.load\\(sys.stdin\\)['data']['amount']\\)\")",
+      "Bash(bash /tmp/gkmps_fee_submit_verify.sh)",
+      "Bash(zap diff *)",
+      "Bash(bash /tmp/gkmps_announcement_verify.sh)",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}
