@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using SchoolERP.Shared.ExceptionHandling;
 using SchoolERP.Shared.Logging;
+using SchoolERP.Shared.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -103,6 +104,7 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 
+app.UseSecurityHeaders();
 app.UseSerilogRequestLogging();
 app.UseHttpsRedirection();
 app.UseCors("Frontend");

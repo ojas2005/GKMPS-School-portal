@@ -14,4 +14,11 @@
 	reverse_proxy gateway:8080
 
 	encode gzip
+
+	# HSTS belongs here, not in the gateway itself: Caddy is the only layer that
+	# actually terminates TLS, so it's the only layer that can honestly promise "this
+	# host is HTTPS-only" to the browser. Skipped for the localhost/self-signed
+	# fallback so a local dev cert warning doesn't turn into a hard HSTS lockout.
+	@notLocalhost not host localhost
+	header @notLocalhost Strict-Transport-Security "max-age=31536000; includeSubDomains"
 }
