@@ -90,6 +90,31 @@ public class StudentsController : ControllerBase
         }
     }
 
+    // Owner/admin edits everything collected at admission (name, DOB, gender, class/section,
+    // admission number, guardian details) in one shot. Login credentials are a separate,
+    // Identity.API-owned concern handled by the admin password-reset flow.
+    [HttpPut("{id:guid}")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin}")]
+    public async Task<IActionResult> UpdateDetails(Guid id, [FromBody] UpdateStudentRequest request, CancellationToken ct)
+    {
+        var actorUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? "unknown";
+        var actorRole = User.FindFirstValue(ClaimTypes.Role) ?? "unknown";
+
+        try
+        {
+            var result = await _studentService.UpdateDetailsAsync(id, request, actorUserId, actorRole, ct);
+            return Ok(ApiResponse<StudentSummary>.Ok(result, "Student details updated."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
     [HttpGet("stats/active-by-class")]
     [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Teacher}")]
     public async Task<IActionResult> ActiveCountByClass(CancellationToken ct)

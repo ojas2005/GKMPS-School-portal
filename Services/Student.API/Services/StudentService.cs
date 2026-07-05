@@ -117,6 +117,46 @@ public class StudentService : IStudentService
             JsonSerializer.Serialize(new { request.ClassId, request.SectionId }));
     }
 
+    public async Task<StudentSummary> UpdateDetailsAsync(Guid studentId, UpdateStudentRequest request, string actorUserId, string actorRole, CancellationToken ct = default)
+    {
+        var student = await _students.FindByIdAsync(studentId, ct)
+            ?? throw new KeyNotFoundException("Student not found.");
+
+        if (!string.Equals(student.AdmissionNumber, request.AdmissionNumber, StringComparison.Ordinal))
+        {
+            var existing = await _students.FindByAdmissionNumberAsync(request.AdmissionNumber, ct);
+            if (existing is not null && existing.Id != studentId)
+                throw new InvalidOperationException($"Admission number '{request.AdmissionNumber}' is already in use.");
+        }
+
+        var before = new { student.AdmissionNumber, student.FullName, student.DateOfBirth, student.Gender, student.ClassId, student.SectionId };
+        var classChanged = student.ClassId != request.ClassId;
+
+        student.AdmissionNumber = request.AdmissionNumber;
+        student.FullName = request.FullName;
+        student.DateOfBirth = request.DateOfBirth;
+        student.Gender = request.Gender;
+        student.ClassId = request.ClassId;
+        student.SectionId = request.SectionId;
+        student.ParentName = request.ParentName;
+        student.ParentEmail = request.ParentEmail;
+        student.ParentPhone = request.ParentPhone;
+        student.Address = request.Address;
+
+        await _students.SaveChangesAsync(ct);
+
+        if (classChanged)
+            await _cache.RemoveAsync(ActiveCountsCacheKey, ct);
+
+        _logger.LogInformation(
+            "AUDIT actor={ActorUserId} role={ActorRole} action=Student.UpdateDetails entity=StudentProfile entityId={StudentId} before={Before} after={After}",
+            actorUserId, actorRole, studentId,
+            JsonSerializer.Serialize(before),
+            JsonSerializer.Serialize(new { request.AdmissionNumber, request.FullName, request.DateOfBirth, request.Gender, request.ClassId, request.SectionId }));
+
+        return ToSummary(student);
+    }
+
     public async Task<IReadOnlyDictionary<string, int>> GetActiveCountByClassAsync(CancellationToken ct = default)
     {
         // Redis-cached dashboard stat, 5-minute TTL as specified in the non-functional requirements.
@@ -136,5 +176,6 @@ public class StudentService : IStudentService
     }
 
     private static StudentSummary ToSummary(StudentProfile s) =>
-        new(s.Id, s.LinkedUserId, s.AdmissionNumber, s.FullName, s.DateOfBirth, s.Gender, s.ClassId, s.SectionId, s.Status, s.AdmissionDateUtc);
+        new(s.Id, s.LinkedUserId, s.AdmissionNumber, s.FullName, s.DateOfBirth, s.Gender, s.ClassId, s.SectionId, s.Status, s.AdmissionDateUtc,
+            s.ParentName, s.ParentEmail, s.ParentPhone, s.Address);
 }

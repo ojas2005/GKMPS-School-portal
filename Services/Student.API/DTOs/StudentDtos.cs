@@ -17,9 +17,24 @@ public record CreateStudentRequest(
 
 public record ReassignClassRequest([Required] string ClassId, [Required] string SectionId);
 
+// Full edit of everything collected at admission (except login credentials, which live in
+// Identity.API and are handled by the separate admin password-reset flow).
+public record UpdateStudentRequest(
+    [Required] string AdmissionNumber,
+    [Required] string FullName,
+    [Required] DateTime DateOfBirth,
+    [Required] string Gender,
+    [Required] string ClassId,
+    [Required] string SectionId,
+    string? ParentName,
+    [EmailAddress] string? ParentEmail,
+    string? ParentPhone,
+    string? Address);
+
 public record StudentSummary(
     Guid Id, Guid LinkedUserId, string AdmissionNumber, string FullName, DateTime DateOfBirth, string Gender,
-    string ClassId, string SectionId, string Status, DateTime AdmissionDateUtc);
+    string ClassId, string SectionId, string Status, DateTime AdmissionDateUtc,
+    string? ParentName, string? ParentEmail, string? ParentPhone, string? Address);
 
 public record UploadDocumentRequest([Required] string DocumentType, [Required] string ContentType);
 
