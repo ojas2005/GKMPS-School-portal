@@ -29,9 +29,12 @@ builder.Services.AddStackExchangeRedisCache(options =>
 builder.Services.AddScoped<ISubjectRepository, SubjectRepository>();
 builder.Services.AddScoped<ITimetableRepository, TimetableRepository>();
 builder.Services.AddScoped<IHomeworkRepository, HomeworkRepository>();
+builder.Services.AddScoped<IScheduleConfigRepository, ScheduleConfigRepository>();
 builder.Services.AddScoped<ISubjectService, SubjectService>();
 builder.Services.AddScoped<ITimetableService, TimetableService>();
 builder.Services.AddScoped<IHomeworkService, HomeworkService>();
+builder.Services.AddScoped<IScheduleConfigService, ScheduleConfigService>();
+builder.Services.AddScoped<ITimetableGeneratorService, TimetableGeneratorService>();
 
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var signingKey = jwtSection["SigningKey"]!;

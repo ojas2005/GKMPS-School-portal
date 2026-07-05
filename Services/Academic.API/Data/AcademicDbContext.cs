@@ -11,6 +11,7 @@ public class AcademicDbContext : DbContext
     public DbSet<Subject> Subjects => Set<Subject>();
     public DbSet<Timetable> Timetables => Set<Timetable>();
     public DbSet<Homework> Homeworks => Set<Homework>();
+    public DbSet<ScheduleConfig> ScheduleConfigs => Set<ScheduleConfig>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -26,6 +27,11 @@ public class AcademicDbContext : DbContext
         {
             entity.HasIndex(t => new { t.ClassId, t.SectionId }).IsUnique();
             entity.Property(t => t.SlotsJson).HasColumnType("jsonb");
+        });
+
+        modelBuilder.Entity<ScheduleConfig>(entity =>
+        {
+            entity.Property(c => c.ConfigJson).HasColumnType("jsonb");
         });
 
         modelBuilder.Entity<Homework>(entity =>

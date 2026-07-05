@@ -14,6 +14,9 @@ public class TimetableRepository : ITimetableRepository
     public Task<Timetable?> FindByClassSectionAsync(string classId, string sectionId, CancellationToken ct = default) =>
         _db.Timetables.FirstOrDefaultAsync(t => t.ClassId == classId && t.SectionId == sectionId, ct);
 
+    public async Task<IReadOnlyList<Timetable>> FindAllAsync(CancellationToken ct = default) =>
+        await _db.Timetables.ToListAsync(ct);
+
     public async Task AddAsync(Timetable timetable, CancellationToken ct = default) =>
         await _db.Timetables.AddAsync(timetable, ct);
 
