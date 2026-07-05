@@ -8,3 +8,4 @@ appsettings.*.local.json
 .env
 .env.*
 !.env.example
+.claude/
