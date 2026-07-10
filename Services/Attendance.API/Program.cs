@@ -17,8 +17,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog(SharedLogging.Configure("Attendance.API"));
 
+var attendanceDbConnectionString = builder.Configuration.GetConnectionString("AttendanceDb");
+var tidbServerVersion = new MySqlServerVersion(new Version(8, 0, 11));
 builder.Services.AddDbContext<AttendanceDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("AttendanceDb")));
+    options.UseMySql(attendanceDbConnectionString, tidbServerVersion));
 
 builder.Services.AddStackExchangeRedisCache(options =>
 {
@@ -96,7 +98,7 @@ builder.Services.AddApiVersioning(options =>
 });
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("AttendanceDb")!, name: "postgres", tags: new[] { "ready" })
+    .AddMySql(attendanceDbConnectionString!, name: "mysql", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "redis", tags: new[] { "ready" });
 
 builder.Services.AddSharedExceptionHandling();

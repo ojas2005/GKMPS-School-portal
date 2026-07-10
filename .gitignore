@@ -9,3 +9,4 @@ appsettings.*.local.json
 .env.*
 !.env.example
 .claude/
+AZ-900_Study_Guide.pdf

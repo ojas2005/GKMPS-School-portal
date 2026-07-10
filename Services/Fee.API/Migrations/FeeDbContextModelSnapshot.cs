@@ -2,8 +2,8 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SchoolERP.Fee.Data;
 
 #nullable disable
@@ -17,11 +17,11 @@ namespace SchoolERP.Fee.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasDefaultSchema("fee")
+                .UseCollation("utf8mb4_general_ci")
                 .HasAnnotation("ProductVersion", "9.0.0")
-                .HasAnnotation("Relational:MaxIdentifierLength", 63);
+                .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
-            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+            MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.InboxState", b =>
                 {
@@ -29,45 +29,48 @@ namespace SchoolERP.Fee.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<DateTime?>("Consumed")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<Guid>("ConsumerId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<DateTime?>("Delivered")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("ExpirationTime")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<long?>("LastSequenceNumber")
                         .HasColumnType("bigint");
 
                     b.Property<Guid>("LockId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<Guid>("MessageId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<int>("ReceiveCount")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("Received")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
-                    b.Property<byte[]>("RowVersion")
+                    b.Property<DateTime?>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("bytea");
+                        .HasColumnType("timestamp(6)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Delivered");
 
-                    b.ToTable("InboxState", "fee");
+                    b.ToTable("InboxState");
                 });
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxMessage", b =>
@@ -76,75 +79,83 @@ namespace SchoolERP.Fee.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("SequenceNumber"));
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("SequenceNumber"));
 
                     b.Property<string>("Body")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<Guid?>("ConversationId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<Guid?>("CorrelationId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("DestinationAddress")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<DateTime?>("EnqueueTime")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("ExpirationTime")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("FaultAddress")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<string>("Headers")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<Guid?>("InboxConsumerId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<Guid?>("InboxMessageId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<Guid?>("InitiatorId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<Guid>("MessageId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("MessageType")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<Guid?>("OutboxId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("Properties")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<Guid?>("RequestId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("ResponseAddress")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<DateTime>("SentTime")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("SourceAddress")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.HasKey("SequenceNumber");
 
@@ -158,87 +169,93 @@ namespace SchoolERP.Fee.Migrations
                     b.HasIndex("InboxMessageId", "InboxConsumerId", "SequenceNumber")
                         .IsUnique();
 
-                    b.ToTable("OutboxMessage", "fee");
+                    b.ToTable("OutboxMessage");
                 });
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxState", b =>
                 {
                     b.Property<Guid>("OutboxId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<DateTime>("Created")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("Delivered")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<long?>("LastSequenceNumber")
                         .HasColumnType("bigint");
 
                     b.Property<Guid>("LockId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
-                    b.Property<byte[]>("RowVersion")
+                    b.Property<DateTime?>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("bytea");
+                        .HasColumnType("timestamp(6)");
 
                     b.HasKey("OutboxId");
 
                     b.HasIndex("Created");
 
-                    b.ToTable("OutboxState", "fee");
+                    b.ToTable("OutboxState");
                 });
 
             modelBuilder.Entity("SchoolERP.Fee.Entities.FeePayment", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("ClassId")
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("Description")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<Guid?>("FeeStructureId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<bool>("IsWaiverApproved")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<bool>("IsWaiverRequested")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<decimal>("PaidAmount")
-                        .HasColumnType("numeric");
+                        .HasColumnType("decimal(65,30)");
 
                     b.Property<string>("PeriodLabel")
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("varchar(50)");
 
                     b.Property<Guid>("StudentId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<decimal>("TotalAmount")
-                        .HasColumnType("numeric");
+                        .HasColumnType("decimal(65,30)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<decimal>("WaiverAmount")
-                        .HasColumnType("numeric");
+                        .HasColumnType("decimal(65,30)");
 
                     b.Property<Guid?>("WaiverApprovedByUserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.HasKey("Id");
 
@@ -249,87 +266,90 @@ namespace SchoolERP.Fee.Migrations
                     b.HasIndex("StudentId", "FeeStructureId")
                         .IsUnique();
 
-                    b.ToTable("FeePayments", "fee");
+                    b.ToTable("FeePayments");
                 });
 
             modelBuilder.Entity("SchoolERP.Fee.Entities.FeeStructure", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("AcademicYear")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<decimal>("Amount")
-                        .HasColumnType("numeric");
+                        .HasColumnType("decimal(65,30)");
 
                     b.Property<string>("ClassId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime>("DueDateUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ClassId", "AcademicYear");
 
-                    b.ToTable("FeeStructures", "fee");
+                    b.ToTable("FeeStructures");
                 });
 
             modelBuilder.Entity("SchoolERP.Fee.Entities.PaymentTransaction", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<decimal>("Amount")
-                        .HasColumnType("numeric");
+                        .HasColumnType("decimal(65,30)");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<Guid>("FeePaymentId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("GatewayReference")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime>("PaidAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("PaymentMethod")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ReceiptBlobPath")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ReceiptNumber")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("varchar(64)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
 
@@ -338,58 +358,59 @@ namespace SchoolERP.Fee.Migrations
                     b.HasIndex("ReceiptNumber")
                         .IsUnique();
 
-                    b.ToTable("PaymentTransactions", "fee");
+                    b.ToTable("PaymentTransactions");
                 });
 
             modelBuilder.Entity("SchoolERP.Shared.Entities.AuditLog", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ActorRole")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ActorUserId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("AfterStateJson")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("BeforeStateJson")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("EntityId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<string>("EntityName")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime>("TimestampUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("EntityName", "EntityId");
 
-                    b.ToTable("AuditLogs", "fee");
+                    b.ToTable("AuditLogs", (string)null);
                 });
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxMessage", b =>

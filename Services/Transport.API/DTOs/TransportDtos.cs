@@ -10,3 +10,8 @@ public record VehicleSummary(Guid Id, string RegistrationNumber, int Capacity, s
 
 public record AssignStudentRouteRequest([Required] Guid StudentId, [Required] Guid RouteId, [Required] string PickupPoint);
 public record StudentRouteMappingSummary(Guid Id, Guid StudentId, Guid RouteId, string PickupPoint);
+
+// Route detail page's students-on-route table -- enriched with the student's name/admission
+// number (fetched from Student.API, which Transport.API doesn't own) so the owner isn't
+// just looking at raw GUIDs.
+public record StudentRouteMappingWithNameSummary(Guid Id, Guid StudentId, string StudentName, string? AdmissionNumber, Guid RouteId, string PickupPoint);

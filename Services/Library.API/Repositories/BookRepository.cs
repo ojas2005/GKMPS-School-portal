@@ -19,7 +19,7 @@ public class BookRepository : IBookRepository
         var query = _db.Books.AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(keyword))
-            query = query.Where(b => EF.Functions.ILike(b.Title, $"%{keyword}%") || EF.Functions.ILike(b.Author, $"%{keyword}%"));
+            query = query.Where(b => EF.Functions.Like(b.Title, $"%{keyword}%") || EF.Functions.Like(b.Author, $"%{keyword}%"));
 
         if (!string.IsNullOrWhiteSpace(category))
             query = query.Where(b => b.Category == category);

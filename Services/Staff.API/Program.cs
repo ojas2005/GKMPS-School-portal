@@ -17,8 +17,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog(SharedLogging.Configure("Staff.API"));
 
+var staffDbConnectionString = builder.Configuration.GetConnectionString("StaffDb");
+var tidbServerVersion = new MySqlServerVersion(new Version(8, 0, 11));
 builder.Services.AddDbContext<StaffDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("StaffDb")));
+    options.UseMySql(staffDbConnectionString, tidbServerVersion));
 
 builder.Services.AddStackExchangeRedisCache(options =>
 {
@@ -100,7 +102,7 @@ builder.Services.AddApiVersioning(options =>
 });
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("StaffDb")!, name: "postgres", tags: new[] { "ready" })
+    .AddMySql(staffDbConnectionString!, name: "mysql", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "redis", tags: new[] { "ready" });
 
 builder.Services.AddSharedExceptionHandling();

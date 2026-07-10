@@ -41,7 +41,7 @@ public class UserRepository : IUserRepository
             query = query.Where(u => u.Role == role);
 
         if (!string.IsNullOrWhiteSpace(keyword))
-            query = query.Where(u => EF.Functions.ILike(u.FullName, $"%{keyword}%") || EF.Functions.ILike(u.Email, $"%{keyword}%"));
+            query = query.Where(u => EF.Functions.Like(u.FullName, $"%{keyword}%") || EF.Functions.Like(u.Email, $"%{keyword}%"));
 
         return await query
             .OrderBy(u => u.FullName)

@@ -17,7 +17,7 @@ services:
       # see README "Migrations" for why they existed and why they're superseded now.
       - ./scripts/01-schemas.sql:/docker-entrypoint-initdb.d/01-schemas.sql:ro
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-schoolerp}"]
       interval: 10s
@@ -29,7 +29,8 @@ services:
     container_name: schoolerp-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      # 6380 on the host because a locally-installed Redis often owns 127.0.0.1:6379.
+      - "127.0.0.1:6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -44,8 +45,10 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-schoolerp}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-devpassword}
     ports:
-      - "5672:5672"
-      - "15672:15672" # management UI
+      # Host ports are for local debugging only (containers use the compose network) --
+      # 5673 on the host because a locally-installed RabbitMQ often owns 127.0.0.1:5672.
+      - "127.0.0.1:5673:5672"
+      - "127.0.0.1:15672:15672" # management UI
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -63,7 +66,7 @@ services:
     restart: unless-stopped
     command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000"
     ports:
-      - "10000:10000"
+      - "127.0.0.1:10000:10000"
 
   # Centralized structured-log viewer: every service ships the same Serilog events here
   # (see BuildingBlocks/SchoolERP.Shared/Logging/SharedLogging.cs) in addition to its own
@@ -80,8 +83,8 @@ services:
       # (or an equivalent secret) instead and drop this.
       SEQ_FIRSTRUN_NOAUTHENTICATION: "true"
     ports:
-      - "8081:80"   # web UI
-      - "5341:5341" # ingestion endpoint (Seq__Url below)
+      - "127.0.0.1:8081:80"   # web UI
+      - "127.0.0.1:5341:5341" # ingestion endpoint (Seq__Url below)
 
   identity-api:
     build:
@@ -101,18 +104,21 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__IdentityDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=identity;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
+      ConnectionStrings__IdentityDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=identity;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
+      # First-boot seed only (ignored once the owner account exists). If unset, a random
+      # password is generated and printed once in this container's logs.
+      Owner__Password: ${OWNER_PASSWORD:-}
       Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID}
       Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET}
       RabbitMq__Host: rabbitmq
       RabbitMq__Username: ${RABBITMQ_USER:-schoolerp}
       RabbitMq__Password: ${RABBITMQ_PASSWORD:-devpassword}
     ports:
-      - "5101:8080"
+      - "127.0.0.1:5101:8080"
 
   student-api:
     build:
@@ -134,7 +140,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__StudentDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=student;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
+      ConnectionStrings__StudentDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=student;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
       BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-}
@@ -145,7 +151,7 @@ services:
       RabbitMq__Username: ${RABBITMQ_USER:-schoolerp}
       RabbitMq__Password: ${RABBITMQ_PASSWORD:-devpassword}
     ports:
-      - "5102:8080"
+      - "127.0.0.1:5102:8080"
 
   staff-api:
     build:
@@ -163,13 +169,13 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__StaffDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=staff;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
+      ConnectionStrings__StaffDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=staff;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
     ports:
-      - "5103:8080"
+      - "127.0.0.1:5103:8080"
 
   attendance-api:
     build:
@@ -187,13 +193,13 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__AttendanceDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=attendance;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
+      ConnectionStrings__AttendanceDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=attendance;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
     ports:
-      - "5104:8080"
+      - "127.0.0.1:5104:8080"
 
   academic-api:
     build:
@@ -211,13 +217,13 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__AcademicDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=academic;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
+      ConnectionStrings__AcademicDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=academic;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
     ports:
-      - "5105:8080"
+      - "127.0.0.1:5105:8080"
 
   examination-api:
     build:
@@ -237,7 +243,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__ExaminationDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=examination;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
+      ConnectionStrings__ExaminationDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=examination;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
       BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-}
@@ -245,7 +251,7 @@ services:
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
     ports:
-      - "5106:8080"
+      - "127.0.0.1:5106:8080"
 
   fee-api:
     build:
@@ -267,7 +273,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__FeeDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=fee;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
+      ConnectionStrings__FeeDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=fee;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
       BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-}
@@ -278,7 +284,7 @@ services:
       RabbitMq__Username: ${RABBITMQ_USER:-schoolerp}
       RabbitMq__Password: ${RABBITMQ_PASSWORD:-devpassword}
     ports:
-      - "5107:8080"
+      - "127.0.0.1:5107:8080"
 
   communication-api:
     build:
@@ -296,13 +302,13 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__CommunicationDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=communication;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
+      ConnectionStrings__CommunicationDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=communication;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
     ports:
-      - "5108:8080"
+      - "127.0.0.1:5108:8080"
 
   library-api:
     build:
@@ -320,13 +326,13 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__LibraryDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=library;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
+      ConnectionStrings__LibraryDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=library;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
     ports:
-      - "5109:8080"
+      - "127.0.0.1:5109:8080"
 
   transport-api:
     build:
@@ -344,13 +350,14 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__TransportDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=transport;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
+      ConnectionStrings__TransportDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=transport;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
+      Services__StudentApiBaseUrl: "http://student-api:8080"
     ports:
-      - "5110:8080"
+      - "127.0.0.1:5110:8080"
 
   notification-api:
     build:
@@ -370,7 +377,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__NotificationDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=notification;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
+      ConnectionStrings__NotificationDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=notification;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -379,7 +386,7 @@ services:
       RabbitMq__Username: ${RABBITMQ_USER:-schoolerp}
       RabbitMq__Password: ${RABBITMQ_PASSWORD:-devpassword}
     ports:
-      - "5111:8080"
+      - "127.0.0.1:5111:8080"
 
   reporting-api:
     build:
@@ -401,7 +408,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__ReportingDb: "Host=${POSTGRES_HOST:-postgres};Port=5432;Database=${POSTGRES_DB:-schoolerp};Username=${POSTGRES_USER:-schoolerp};Password=${POSTGRES_PASSWORD:-devpassword};SearchPath=reporting;SSL Mode=${POSTGRES_SSL_MODE:-Disable};Trust Server Certificate=true"
+      ConnectionStrings__ReportingDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=reporting;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -409,7 +416,7 @@ services:
       Services__StudentApiBaseUrl: "http://student-api:8080"
       Services__FeeApiBaseUrl: "http://fee-api:8080"
     ports:
-      - "5112:8080"
+      - "127.0.0.1:5112:8080"
 
   gateway:
     build:

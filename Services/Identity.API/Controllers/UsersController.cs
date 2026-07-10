@@ -16,9 +16,20 @@ public class UsersController : ControllerBase
 
     public UsersController(IUserService userService) => _userService = userService;
 
+    // Admins can look up anyone (the student/teacher detail pages need the login id);
+    // everyone else only themselves -- UserSummary carries email/username/last-login,
+    // which one student has no business reading about another.
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
+        var callerRole = User.FindFirstValue(ClaimTypes.Role);
+        var isAdmin = callerRole is RoleNames.SuperAdmin or RoleNames.Principal or RoleNames.Admin;
+        var callerUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!isAdmin && callerUserId != id.ToString())
+        {
+            return Forbid();
+        }
+
         var user = await _userService.GetByIdAsync(id, ct);
         return user is null
             ? NotFound(ApiResponse<object>.Fail("User not found."))

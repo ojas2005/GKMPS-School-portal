@@ -19,8 +19,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog(SharedLogging.Configure("Notification.API"));
 
+var notificationDbConnectionString = builder.Configuration.GetConnectionString("NotificationDb");
+// Pinned rather than ServerVersion.AutoDetect(...): TiDB doesn't report a version Pomelo can
+// reliably auto-detect against, and pinning also avoids needing a live DB connection at
+// EF Core design time (migrations, scaffolding).
+var tidbServerVersion = new MySqlServerVersion(new Version(8, 0, 11));
 builder.Services.AddDbContext<NotificationDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("NotificationDb")));
+    options.UseMySql(notificationDbConnectionString, tidbServerVersion));
 
 builder.Services.AddStackExchangeRedisCache(options =>
 {
@@ -119,7 +124,7 @@ builder.Services.AddApiVersioning(options =>
 });
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("NotificationDb")!, name: "postgres", tags: new[] { "ready" })
+    .AddMySql(notificationDbConnectionString!, name: "mysql", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "redis", tags: new[] { "ready" });
 
 builder.Services.AddSharedExceptionHandling();

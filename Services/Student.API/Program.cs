@@ -23,9 +23,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog(SharedLogging.Configure("Student.API"));
 
-// ---------- EF Core / PostgreSQL ----------
+// ---------- EF Core / TiDB (MySQL wire protocol via Pomelo) ----------
+var studentDbConnectionString = builder.Configuration.GetConnectionString("StudentDb");
+var tidbServerVersion = new MySqlServerVersion(new Version(8, 0, 11));
 builder.Services.AddDbContext<StudentDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("StudentDb")));
+    options.UseMySql(studentDbConnectionString, tidbServerVersion));
 
 // ---------- Redis distributed cache ----------
 builder.Services.AddStackExchangeRedisCache(options =>
@@ -52,7 +54,7 @@ builder.Services.AddMassTransit(x =>
 {
     x.AddEntityFrameworkOutbox<StudentDbContext>(o =>
     {
-        o.UsePostgres();
+        o.UseMySql();
         o.UseBusOutbox();
     });
 
@@ -135,7 +137,7 @@ builder.Services.AddApiVersioning(options =>
 });
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("StudentDb")!, name: "postgres", tags: new[] { "ready" })
+    .AddMySql(studentDbConnectionString!, name: "mysql", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "redis", tags: new[] { "ready" });
 
 builder.Services.AddSharedExceptionHandling();

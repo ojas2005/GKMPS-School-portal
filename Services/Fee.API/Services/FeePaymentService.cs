@@ -112,6 +112,28 @@ public class FeePaymentService : IFeePaymentService
         return new FeeSubmissionResult(ToSummary(payment), transaction.Id, transaction.ReceiptNumber);
     }
 
+    public async Task<FeePaymentSummary> AddAdHocDueAsync(Guid studentId, AddAdHocDueRequest request, CancellationToken ct = default)
+    {
+        // Unlike SubmitPaymentAsync, no AppendTransactionAsync call -- nothing was paid,
+        // so PaidAmount stays at its default 0 and no transaction/receipt/event is produced.
+        var payment = new FeePayment
+        {
+            StudentId = studentId,
+            FeeStructureId = null,
+            ClassId = request.ClassId,
+            PeriodLabel = request.PeriodLabel,
+            Description = request.Description,
+            TotalAmount = request.Amount
+        };
+        await _payments.AddAsync(payment, ct);
+        await _payments.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Ad-hoc due added: amount={Amount} period={Period} student={StudentId}",
+            request.Amount, request.PeriodLabel, studentId);
+
+        return ToSummary(payment);
+    }
+
     /// <summary>Shared by RecordPaymentAsync/SubmitPaymentAsync: appends the immutable ledger
     /// entry, atomically bumps PaidAmount, and publishes FeePaidEvent for Reporting/Notification.</summary>
     private async Task<PaymentTransaction> AppendTransactionAsync(FeePayment payment, decimal amount, string paymentMethod, string? gatewayReference, CancellationToken ct)

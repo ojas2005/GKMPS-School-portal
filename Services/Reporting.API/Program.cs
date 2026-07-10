@@ -24,8 +24,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog(SharedLogging.Configure("Reporting.API"));
 
+var reportingDbConnectionString = builder.Configuration.GetConnectionString("ReportingDb");
+var tidbServerVersion = new MySqlServerVersion(new Version(8, 0, 11));
 builder.Services.AddDbContext<ReportingDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("ReportingDb")));
+    options.UseMySql(reportingDbConnectionString, tidbServerVersion));
 
 builder.Services.AddStackExchangeRedisCache(options =>
 {
@@ -133,7 +135,7 @@ builder.Services.AddApiVersioning(options =>
 });
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("ReportingDb")!, name: "postgres", tags: new[] { "ready" })
+    .AddMySql(reportingDbConnectionString!, name: "mysql", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "redis", tags: new[] { "ready" });
 
 builder.Services.AddSharedExceptionHandling();

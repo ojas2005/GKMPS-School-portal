@@ -2,8 +2,8 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SchoolERP.Library.Data;
 
 #nullable disable
@@ -17,93 +17,97 @@ namespace SchoolERP.Library.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasDefaultSchema("library")
+                .UseCollation("utf8mb4_general_ci")
                 .HasAnnotation("ProductVersion", "9.0.0")
-                .HasAnnotation("Relational:MaxIdentifierLength", 63);
+                .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
-            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+            MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
             modelBuilder.Entity("SchoolERP.Library.Entities.Book", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("Author")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<int>("AvailableCopies")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<string>("Category")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<string>("Isbn")
                         .IsRequired()
                         .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
+                        .HasColumnType("varchar(20)");
 
                     b.Property<string>("Title")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<int>("TotalCopies")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Isbn")
                         .IsUnique();
 
-                    b.ToTable("Books", "library");
+                    b.ToTable("Books");
                 });
 
             modelBuilder.Entity("SchoolERP.Library.Entities.BookIssue", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<Guid>("BookId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime>("DueDateUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<decimal>("FineAmount")
-                        .HasColumnType("numeric");
+                        .HasColumnType("decimal(65,30)");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<bool>("IsFinePaid")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime>("IssuedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("ReturnedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<Guid>("StudentId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
 
@@ -111,58 +115,59 @@ namespace SchoolERP.Library.Migrations
 
                     b.HasIndex("StudentId", "BookId", "ReturnedAtUtc");
 
-                    b.ToTable("BookIssues", "library");
+                    b.ToTable("BookIssues");
                 });
 
             modelBuilder.Entity("SchoolERP.Shared.Entities.AuditLog", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ActorRole")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ActorUserId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("AfterStateJson")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("BeforeStateJson")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("EntityId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<string>("EntityName")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime>("TimestampUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("EntityName", "EntityId");
 
-                    b.ToTable("AuditLogs", "library");
+                    b.ToTable("AuditLogs", (string)null);
                 });
 
             modelBuilder.Entity("SchoolERP.Library.Entities.BookIssue", b =>

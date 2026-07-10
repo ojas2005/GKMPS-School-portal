@@ -29,4 +29,14 @@ public class RoutesController : ControllerBase
         var result = await _routeService.GetAllAsync(ct);
         return Ok(ApiResponse<object>.Ok(result));
     }
+
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
+    {
+        var result = await _routeService.GetByIdAsync(id, ct);
+        if (result is null)
+            return NotFound(ApiResponse<object>.Fail("Route not found."));
+
+        return Ok(ApiResponse<RouteSummary>.Ok(result));
+    }
 }

@@ -17,8 +17,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog(SharedLogging.Configure("Academic.API"));
 
+var academicDbConnectionString = builder.Configuration.GetConnectionString("AcademicDb");
+var tidbServerVersion = new MySqlServerVersion(new Version(8, 0, 11));
 builder.Services.AddDbContext<AcademicDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("AcademicDb")));
+    options.UseMySql(academicDbConnectionString, tidbServerVersion));
 
 builder.Services.AddStackExchangeRedisCache(options =>
 {
@@ -102,7 +104,7 @@ builder.Services.AddApiVersioning(options =>
 });
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("AcademicDb")!, name: "postgres", tags: new[] { "ready" })
+    .AddMySql(academicDbConnectionString!, name: "mysql", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "redis", tags: new[] { "ready" });
 
 builder.Services.AddSharedExceptionHandling();

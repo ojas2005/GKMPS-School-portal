@@ -33,5 +33,11 @@ public class RouteService : IRouteService
         return routes.Select(ToSummary).ToList();
     }
 
+    public async Task<RouteSummary?> GetByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        var route = await _routes.FindByIdAsync(id, ct);
+        return route is null ? null : ToSummary(route);
+    }
+
     private static RouteSummary ToSummary(RouteEntity r) => new(r.Id, r.Name, r.StartPoint, r.EndPoint, r.MonthlyFee);
 }

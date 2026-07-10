@@ -2,8 +2,8 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SchoolERP.Reporting.Data;
 
 #nullable disable
@@ -17,100 +17,103 @@ namespace SchoolERP.Reporting.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasDefaultSchema("reporting")
+                .UseCollation("utf8mb4_general_ci")
                 .HasAnnotation("ProductVersion", "9.0.0")
-                .HasAnnotation("Relational:MaxIdentifierLength", 63);
+                .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
-            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+            MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
             modelBuilder.Entity("SchoolERP.Reporting.Entities.ReportSnapshot", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("FromUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<Guid>("GeneratedByUserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<string>("ReportType")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<string>("ResultJson")
                         .IsRequired()
-                        .HasColumnType("jsonb");
+                        .HasColumnType("json");
 
                     b.Property<DateTime?>("ToUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ReportType", "CreatedAtUtc");
 
-                    b.ToTable("ReportSnapshots", "reporting");
+                    b.ToTable("ReportSnapshots");
                 });
 
             modelBuilder.Entity("SchoolERP.Shared.Entities.AuditLog", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ActorRole")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ActorUserId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("AfterStateJson")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("BeforeStateJson")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("EntityId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<string>("EntityName")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime>("TimestampUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("EntityName", "EntityId");
 
-                    b.ToTable("AuditLogs", "reporting");
+                    b.ToTable("AuditLogs", (string)null);
                 });
 #pragma warning restore 612, 618
         }

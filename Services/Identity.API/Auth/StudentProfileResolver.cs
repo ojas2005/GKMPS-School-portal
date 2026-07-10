@@ -1,4 +1,4 @@
-using Npgsql;
+using MySqlConnector;
 
 namespace SchoolERP.Identity.Auth;
 
@@ -28,12 +28,12 @@ public class StudentProfileResolver
 
         try
         {
-            await using var conn = new NpgsqlConnection(_connectionString);
+            await using var conn = new MySqlConnection(_connectionString);
             await conn.OpenAsync(ct);
-            await using var cmd = new NpgsqlCommand(
-                "SELECT \"Id\", \"ClassId\", \"SectionId\" " +
-                "FROM student.\"Students\" " +
-                "WHERE \"LinkedUserId\" = @uid AND \"IsDeleted\" = false " +
+            await using var cmd = new MySqlCommand(
+                "SELECT `Id`, `ClassId`, `SectionId` " +
+                "FROM student.`Students` " +
+                "WHERE `LinkedUserId` = @uid AND `IsDeleted` = 0 " +
                 "LIMIT 1",
                 conn);
             cmd.Parameters.AddWithValue("uid", userId);

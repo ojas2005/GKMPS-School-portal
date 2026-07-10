@@ -41,6 +41,12 @@ public record SubmitFeePaymentRequest(
 
 public record FeeSubmissionResult(FeePaymentSummary Due, Guid TransactionId, string ReceiptNumber);
 
+// Creates an unpaid ad-hoc due (no payment recorded, no receipt) -- e.g. a transport
+// route's monthly fee added the moment a student is mapped to that route. Mirrors
+// SubmitFeePaymentRequest minus the payment-method fields, since nothing was paid.
+public record AddAdHocDueRequest(
+    [Required] string ClassId, [Required] decimal Amount, [Required] string PeriodLabel, string? Description);
+
 public record PaymentTransactionSummary(
     Guid Id, Guid FeePaymentId, decimal Amount, string ReceiptNumber, string PaymentMethod,
     DateTime PaidAtUtc, string? PeriodLabel, string? Description, string? FeeStructureName);

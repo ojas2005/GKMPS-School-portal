@@ -23,8 +23,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog(SharedLogging.Configure("Fee.API"));
 
+var feeDbConnectionString = builder.Configuration.GetConnectionString("FeeDb");
+var tidbServerVersion = new MySqlServerVersion(new Version(8, 0, 11));
 builder.Services.AddDbContext<FeeDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("FeeDb")));
+    options.UseMySql(feeDbConnectionString, tidbServerVersion));
 
 builder.Services.AddStackExchangeRedisCache(options =>
 {
@@ -45,7 +47,7 @@ builder.Services.AddMassTransit(x =>
 {
     x.AddEntityFrameworkOutbox<FeeDbContext>(o =>
     {
-        o.UsePostgres();
+        o.UseMySql();
         o.UseBusOutbox();
     });
 
@@ -126,7 +128,7 @@ builder.Services.AddApiVersioning(options =>
 });
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("FeeDb")!, name: "postgres", tags: new[] { "ready" })
+    .AddMySql(feeDbConnectionString!, name: "mysql", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "redis", tags: new[] { "ready" });
 
 builder.Services.AddSharedExceptionHandling();

@@ -4,10 +4,14 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Polly;
+using Polly.Extensions.Http;
 using Serilog;
 using SchoolERP.Shared.ExceptionHandling;
 using SchoolERP.Shared.Logging;
+using SchoolERP.Transport.Clients;
 using SchoolERP.Transport.Data;
+using SchoolERP.Transport.Handlers;
 using SchoolERP.Transport.Repositories;
 using SchoolERP.Transport.Repositories.Interfaces;
 using SchoolERP.Transport.Services;
@@ -17,8 +21,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog(SharedLogging.Configure("Transport.API"));
 
+var transportDbConnectionString = builder.Configuration.GetConnectionString("TransportDb");
+var tidbServerVersion = new MySqlServerVersion(new Version(8, 0, 11));
 builder.Services.AddDbContext<TransportDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("TransportDb")));
+    options.UseMySql(transportDbConnectionString, tidbServerVersion));
 
 builder.Services.AddStackExchangeRedisCache(options =>
 {
@@ -32,6 +38,28 @@ builder.Services.AddScoped<IStudentRouteMappingRepository, StudentRouteMappingRe
 builder.Services.AddScoped<IRouteService, RouteService>();
 builder.Services.AddScoped<IVehicleService, VehicleService>();
 builder.Services.AddScoped<IStudentRouteMappingService, StudentRouteMappingService>();
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<AuthForwardingHandler>();
+
+// Polly retry + circuit breaker wrapping every inter-service HTTP call, matching the
+// same convention every other cross-service HttpClient in this project follows.
+static IAsyncPolicy<HttpResponseMessage> RetryPolicy() =>
+    HttpPolicyExtensions.HandleTransientHttpError()
+        .WaitAndRetryAsync(3, attempt => TimeSpan.FromMilliseconds(200 * Math.Pow(2, attempt)));
+
+static IAsyncPolicy<HttpResponseMessage> CircuitBreakerPolicy() =>
+    HttpPolicyExtensions.HandleTransientHttpError()
+        .CircuitBreakerAsync(5, TimeSpan.FromSeconds(30));
+
+builder.Services.AddHttpClient<IStudentServiceClient, StudentServiceClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Services:StudentApiBaseUrl"] ?? "http://student-api:8080");
+    client.Timeout = TimeSpan.FromSeconds(10);
+})
+.AddHttpMessageHandler<AuthForwardingHandler>()
+.AddPolicyHandler(RetryPolicy())
+.AddPolicyHandler(CircuitBreakerPolicy());
 
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var signingKey = jwtSection["SigningKey"]!;
@@ -99,7 +127,7 @@ builder.Services.AddApiVersioning(options =>
 });
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("TransportDb")!, name: "postgres", tags: new[] { "ready" })
+    .AddMySql(transportDbConnectionString!, name: "mysql", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "redis", tags: new[] { "ready" });
 
 builder.Services.AddSharedExceptionHandling();

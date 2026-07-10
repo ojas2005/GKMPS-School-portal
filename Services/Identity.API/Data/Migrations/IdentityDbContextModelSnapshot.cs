@@ -2,8 +2,8 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SchoolERP.Identity.Data;
 
 #nullable disable
@@ -17,11 +17,11 @@ namespace SchoolERP.Identity.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasDefaultSchema("identity")
+                .UseCollation("utf8mb4_general_ci")
                 .HasAnnotation("ProductVersion", "9.0.0")
-                .HasAnnotation("Relational:MaxIdentifierLength", 63);
+                .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
-            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+            MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.InboxState", b =>
                 {
@@ -29,45 +29,48 @@ namespace SchoolERP.Identity.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<DateTime?>("Consumed")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<Guid>("ConsumerId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<DateTime?>("Delivered")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("ExpirationTime")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<long?>("LastSequenceNumber")
                         .HasColumnType("bigint");
 
                     b.Property<Guid>("LockId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<Guid>("MessageId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<int>("ReceiveCount")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("Received")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
-                    b.Property<byte[]>("RowVersion")
+                    b.Property<DateTime?>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("bytea");
+                        .HasColumnType("timestamp(6)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Delivered");
 
-                    b.ToTable("InboxState", "identity");
+                    b.ToTable("InboxState");
                 });
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxMessage", b =>
@@ -76,75 +79,83 @@ namespace SchoolERP.Identity.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("SequenceNumber"));
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("SequenceNumber"));
 
                     b.Property<string>("Body")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<Guid?>("ConversationId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<Guid?>("CorrelationId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("DestinationAddress")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<DateTime?>("EnqueueTime")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("ExpirationTime")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("FaultAddress")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<string>("Headers")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<Guid?>("InboxConsumerId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<Guid?>("InboxMessageId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<Guid?>("InitiatorId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<Guid>("MessageId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("MessageType")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<Guid?>("OutboxId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("Properties")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<Guid?>("RequestId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("ResponseAddress")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<DateTime>("SentTime")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("SourceAddress")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.HasKey("SequenceNumber");
 
@@ -158,73 +169,77 @@ namespace SchoolERP.Identity.Data.Migrations
                     b.HasIndex("InboxMessageId", "InboxConsumerId", "SequenceNumber")
                         .IsUnique();
 
-                    b.ToTable("OutboxMessage", "identity");
+                    b.ToTable("OutboxMessage");
                 });
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxState", b =>
                 {
                     b.Property<Guid>("OutboxId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<DateTime>("Created")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("Delivered")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<long?>("LastSequenceNumber")
                         .HasColumnType("bigint");
 
                     b.Property<Guid>("LockId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
-                    b.Property<byte[]>("RowVersion")
+                    b.Property<DateTime?>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("bytea");
+                        .HasColumnType("timestamp(6)");
 
                     b.HasKey("OutboxId");
 
                     b.HasIndex("Created");
 
-                    b.ToTable("OutboxState", "identity");
+                    b.ToTable("OutboxState");
                 });
 
             modelBuilder.Entity("SchoolERP.Identity.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("CreatedByIp")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<DateTime>("ExpiresAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<string>("ReplacedByTokenHash")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<DateTime?>("RevokedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("varchar(512)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.HasKey("Id");
 
@@ -233,66 +248,68 @@ namespace SchoolERP.Identity.Data.Migrations
 
                     b.HasIndex("UserId", "ExpiresAtUtc");
 
-                    b.ToTable("RefreshTokens", "identity");
+                    b.ToTable("RefreshTokens");
                 });
 
             modelBuilder.Entity("SchoolERP.Identity.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("varchar(256)");
 
                     b.Property<int>("FailedLoginAttempts")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasColumnType("varchar(200)");
 
                     b.Property<string>("GoogleSubjectId")
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<bool>("IsEmailVerified")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime?>("LastLoginAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<Guid?>("LinkedProfileId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<DateTime?>("LockoutEndUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("PasswordHash")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                        .HasColumnType("varchar(50)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("Username")
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
+                        .HasColumnType("varchar(100)");
 
                     b.HasKey("Id");
 
@@ -304,52 +321,53 @@ namespace SchoolERP.Identity.Data.Migrations
                     b.HasIndex("Username")
                         .IsUnique();
 
-                    b.ToTable("Users", "identity");
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("SchoolERP.Shared.Entities.AuditLog", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ActorRole")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ActorUserId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("AfterStateJson")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("BeforeStateJson")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("EntityId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<string>("EntityName")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime>("TimestampUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
 
@@ -357,7 +375,7 @@ namespace SchoolERP.Identity.Data.Migrations
 
                     b.HasIndex("EntityName", "EntityId");
 
-                    b.ToTable("AuditLogs", "identity");
+                    b.ToTable("AuditLogs", (string)null);
                 });
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxMessage", b =>

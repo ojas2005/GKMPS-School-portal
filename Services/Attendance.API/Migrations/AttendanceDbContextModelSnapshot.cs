@@ -2,8 +2,8 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SchoolERP.Attendance.Data;
 
 #nullable disable
@@ -17,56 +17,59 @@ namespace SchoolERP.Attendance.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasDefaultSchema("attendance")
+                .UseCollation("utf8mb4_general_ci")
                 .HasAnnotation("ProductVersion", "9.0.0")
-                .HasAnnotation("Relational:MaxIdentifierLength", 63);
+                .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
-            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+            MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
             modelBuilder.Entity("SchoolERP.Attendance.Entities.AttendanceRecord", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<TimeOnly?>("ArrivalTime")
                         .HasColumnType("time");
 
                     b.Property<string>("ClassId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<bool>("IsLate")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime>("MarkedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<Guid>("MarkedByUserId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("SectionId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<Guid>("StudentId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
 
@@ -75,102 +78,105 @@ namespace SchoolERP.Attendance.Migrations
 
                     b.HasIndex("ClassId", "SectionId", "Date");
 
-                    b.ToTable("AttendanceRecords", "attendance");
+                    b.ToTable("AttendanceRecords");
                 });
 
             modelBuilder.Entity("SchoolERP.Attendance.Entities.MonthlyAttendanceSummary", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<int>("AbsentCount")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<int>("LateCount")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<int>("Month")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<int>("PresentCount")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<Guid>("StudentId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<int>("TotalMarkedDays")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<int>("Year")
-                        .HasColumnType("integer");
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
                     b.HasIndex("StudentId", "Year", "Month")
                         .IsUnique();
 
-                    b.ToTable("MonthlySummaries", "attendance");
+                    b.ToTable("MonthlySummaries");
                 });
 
             modelBuilder.Entity("SchoolERP.Shared.Entities.AuditLog", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
 
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ActorRole")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("ActorUserId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("AfterStateJson")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<string>("BeforeStateJson")
-                        .HasColumnType("text");
+                        .HasColumnType("longtext");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("EntityId")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<string>("EntityName")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
+                        .HasColumnType("tinyint(1)");
 
                     b.Property<DateTime>("TimestampUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("datetime(6)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("EntityName", "EntityId");
 
-                    b.ToTable("AuditLogs", "attendance");
+                    b.ToTable("AuditLogs", (string)null);
                 });
 #pragma warning restore 612, 618
         }

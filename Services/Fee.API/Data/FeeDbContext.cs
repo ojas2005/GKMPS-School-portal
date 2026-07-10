@@ -17,7 +17,7 @@ public class FeeDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.HasDefaultSchema("fee");
+        modelBuilder.UseCollation("utf8mb4_general_ci");
 
         modelBuilder.Entity<FeeStructure>(entity =>
         {
@@ -57,5 +57,18 @@ public class FeeDbContext : DbContext
         modelBuilder.AddInboxStateEntity();
         modelBuilder.AddOutboxMessageEntity();
         modelBuilder.AddOutboxStateEntity();
+
+        // Pomelo defaults Guid columns to collation "ascii_general_ci", which TiDB's new
+        // collation framework doesn't support (only ascii_bin is in its allowed set).
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                if (property.ClrType == typeof(Guid) || property.ClrType == typeof(Guid?))
+                {
+                    property.SetCollation("ascii_bin");
+                }
+            }
+        }
     }
 }

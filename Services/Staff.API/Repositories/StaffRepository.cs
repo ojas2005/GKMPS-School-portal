@@ -22,7 +22,7 @@ public class StaffRepository : IStaffRepository
         var query = _db.Staff.AsQueryable();
         if (!string.IsNullOrWhiteSpace(designation)) query = query.Where(s => s.Designation == designation);
         if (!string.IsNullOrWhiteSpace(keyword))
-            query = query.Where(s => EF.Functions.ILike(s.FullName, $"%{keyword}%") || EF.Functions.ILike(s.EmployeeCode, $"%{keyword}%"));
+            query = query.Where(s => EF.Functions.Like(s.FullName, $"%{keyword}%") || EF.Functions.Like(s.EmployeeCode, $"%{keyword}%"));
 
         return await query.OrderBy(s => s.FullName).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
     }

@@ -17,7 +17,7 @@ public class StudentDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.HasDefaultSchema("student");
+        modelBuilder.UseCollation("utf8mb4_general_ci");
 
         modelBuilder.Entity<StudentProfile>(entity =>
         {
@@ -59,5 +59,18 @@ public class StudentDbContext : DbContext
         modelBuilder.AddInboxStateEntity();
         modelBuilder.AddOutboxMessageEntity();
         modelBuilder.AddOutboxStateEntity();
+
+        // Pomelo defaults Guid columns to collation "ascii_general_ci", which TiDB's new
+        // collation framework doesn't support (only ascii_bin is in its allowed set).
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                if (property.ClrType == typeof(Guid) || property.ClrType == typeof(Guid?))
+                {
+                    property.SetCollation("ascii_bin");
+                }
+            }
+        }
     }
 }

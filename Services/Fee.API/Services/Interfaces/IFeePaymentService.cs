@@ -27,4 +27,9 @@ public interface IFeePaymentService
 
     /// <summary>Every receipt (payment transaction) across all of a student's dues, newest first.</summary>
     Task<IReadOnlyList<PaymentTransactionSummary>> GetTransactionsForStudentAsync(Guid studentId, CancellationToken ct = default);
+
+    /// <summary>Creates an unpaid ad-hoc due -- no payment, no receipt, PaidAmount stays 0.
+    /// Used when another service's action (e.g. assigning a student to a transport route)
+    /// needs to add to the student's pending total without recording money received.</summary>
+    Task<FeePaymentSummary> AddAdHocDueAsync(Guid studentId, AddAdHocDueRequest request, CancellationToken ct = default);
 }

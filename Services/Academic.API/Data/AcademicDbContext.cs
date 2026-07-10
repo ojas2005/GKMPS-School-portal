@@ -16,7 +16,7 @@ public class AcademicDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.HasDefaultSchema("academic");
+        modelBuilder.UseCollation("utf8mb4_general_ci");
 
         modelBuilder.Entity<Subject>(entity =>
         {
@@ -26,12 +26,12 @@ public class AcademicDbContext : DbContext
         modelBuilder.Entity<Timetable>(entity =>
         {
             entity.HasIndex(t => new { t.ClassId, t.SectionId }).IsUnique();
-            entity.Property(t => t.SlotsJson).HasColumnType("jsonb");
+            entity.Property(t => t.SlotsJson).HasColumnType("json");
         });
 
         modelBuilder.Entity<ScheduleConfig>(entity =>
         {
-            entity.Property(c => c.ConfigJson).HasColumnType("jsonb");
+            entity.Property(c => c.ConfigJson).HasColumnType("json");
         });
 
         modelBuilder.Entity<Homework>(entity =>
@@ -44,5 +44,18 @@ public class AcademicDbContext : DbContext
             entity.ToTable("AuditLogs");
             entity.HasIndex(a => new { a.EntityName, a.EntityId });
         });
+
+        // Pomelo defaults Guid columns to collation "ascii_general_ci", which TiDB's new
+        // collation framework doesn't support (only ascii_bin is in its allowed set).
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                if (property.ClrType == typeof(Guid) || property.ClrType == typeof(Guid?))
+                {
+                    property.SetCollation("ascii_bin");
+                }
+            }
+        }
     }
 }

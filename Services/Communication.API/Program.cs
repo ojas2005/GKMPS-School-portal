@@ -17,8 +17,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog(SharedLogging.Configure("Communication.API"));
 
+var communicationDbConnectionString = builder.Configuration.GetConnectionString("CommunicationDb");
+var tidbServerVersion = new MySqlServerVersion(new Version(8, 0, 11));
 builder.Services.AddDbContext<CommunicationDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("CommunicationDb")));
+    options.UseMySql(communicationDbConnectionString, tidbServerVersion));
 
 builder.Services.AddStackExchangeRedisCache(options =>
 {
@@ -97,7 +99,7 @@ builder.Services.AddApiVersioning(options =>
 });
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("CommunicationDb")!, name: "postgres", tags: new[] { "ready" })
+    .AddMySql(communicationDbConnectionString!, name: "mysql", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "redis", tags: new[] { "ready" });
 
 builder.Services.AddSharedExceptionHandling();

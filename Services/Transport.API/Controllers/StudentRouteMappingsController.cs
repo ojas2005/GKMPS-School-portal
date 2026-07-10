@@ -21,4 +21,11 @@ public class StudentRouteMappingsController : ControllerBase
         var result = await _mappingService.AssignAsync(request, ct);
         return Ok(ApiResponse<StudentRouteMappingSummary>.Ok(result, "Route assigned."));
     }
+
+    [HttpGet]
+    public async Task<IActionResult> GetByRoute([FromQuery] Guid routeId, CancellationToken ct)
+    {
+        var result = await _mappingService.GetByRouteIdAsync(routeId, ct);
+        return Ok(ApiResponse<object>.Ok(result));
+    }
 }

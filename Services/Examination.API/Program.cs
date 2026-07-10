@@ -22,8 +22,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog(SharedLogging.Configure("Examination.API"));
 
+var examinationDbConnectionString = builder.Configuration.GetConnectionString("ExaminationDb");
+var tidbServerVersion = new MySqlServerVersion(new Version(8, 0, 11));
 builder.Services.AddDbContext<ExaminationDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("ExaminationDb")));
+    options.UseMySql(examinationDbConnectionString, tidbServerVersion));
 
 builder.Services.AddStackExchangeRedisCache(options =>
 {
@@ -105,7 +107,7 @@ builder.Services.AddApiVersioning(options =>
 });
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("ExaminationDb")!, name: "postgres", tags: new[] { "ready" })
+    .AddMySql(examinationDbConnectionString!, name: "mysql", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "redis", tags: new[] { "ready" });
 
 builder.Services.AddSharedExceptionHandling();

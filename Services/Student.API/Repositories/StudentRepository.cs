@@ -29,8 +29,8 @@ public class StudentRepository : IStudentRepository
 
         if (!string.IsNullOrWhiteSpace(keyword))
             query = query.Where(s =>
-                EF.Functions.ILike(s.FullName, $"%{keyword}%") ||
-                EF.Functions.ILike(s.AdmissionNumber, $"%{keyword}%"));
+                EF.Functions.Like(s.FullName, $"%{keyword}%") ||
+                EF.Functions.Like(s.AdmissionNumber, $"%{keyword}%"));
 
         return await query
             .OrderBy(s => s.FullName)

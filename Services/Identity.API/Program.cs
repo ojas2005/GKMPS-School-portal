@@ -21,9 +21,11 @@ var builder = WebApplication.CreateBuilder(args);
 // ---------- Logging (Serilog -> console + Seq) ----------
 builder.Host.UseSerilog(SharedLogging.Configure("Identity.API"));
 
-// ---------- EF Core / PostgreSQL ----------
+// ---------- EF Core / TiDB (MySQL wire protocol) ----------
+var identityDbConnectionString = builder.Configuration.GetConnectionString("IdentityDb");
+var tidbServerVersion = new MySqlServerVersion(new Version(8, 0, 11));
 builder.Services.AddDbContext<IdentityDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("IdentityDb")));
+    options.UseMySql(identityDbConnectionString, tidbServerVersion));
 
 // ---------- Redis distributed cache ----------
 builder.Services.AddStackExchangeRedisCache(options =>
@@ -51,7 +53,7 @@ builder.Services.AddMassTransit(x =>
 {
     x.AddEntityFrameworkOutbox<IdentityDbContext>(o =>
     {
-        o.UsePostgres();
+        o.UseMySql();
         o.UseBusOutbox();
     });
 
@@ -148,7 +150,7 @@ builder.Services.AddApiVersioning(options =>
 
 // ---------- Health checks (/health, /health/ready, /health/live) ----------
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("IdentityDb")!, name: "postgres", tags: new[] { "ready" })
+    .AddMySql(identityDbConnectionString!, name: "mysql", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "redis", tags: new[] { "ready" });
 
 builder.Services.AddSharedExceptionHandling();
@@ -193,12 +195,21 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 
     // Seed the school-owner account: registration is closed to the public, so this is
-    // the bootstrap identity every other account is created from. Credentials can be
-    // overridden via Owner:Username / Owner:Password configuration.
+    // the bootstrap identity every other account is created from. Credentials come from
+    // Owner:Username / Owner:Password configuration; when no password is configured, a
+    // random one is generated and logged once (retrieve it from the container logs and
+    // change it immediately) -- never a hard-coded default, which would live forever in
+    // git history for anyone to read.
     var ownerUsername = app.Configuration["Owner:Username"] ?? "ownerishim";
-    var ownerPassword = app.Configuration["Owner:Password"] ?? "Owner@1234";
     if (!db.Users.IgnoreQueryFilters().Any(u => u.Username == ownerUsername))
     {
+        var ownerPassword = app.Configuration["Owner:Password"];
+        var passwordWasGenerated = string.IsNullOrEmpty(ownerPassword);
+        if (passwordWasGenerated)
+        {
+            ownerPassword = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(18));
+        }
+
         var owner = new SchoolERP.Identity.Entities.User
         {
             Email = $"{ownerUsername}@gkmps.local",
@@ -209,10 +220,17 @@ using (var scope = app.Services.CreateScope())
             IsActive = true
         };
         owner.PasswordHash = new Microsoft.AspNetCore.Identity.PasswordHasher<SchoolERP.Identity.Entities.User>()
-            .HashPassword(owner, ownerPassword);
+            .HashPassword(owner, ownerPassword!);
         db.Users.Add(owner);
         db.SaveChanges();
-        Log.Information("Seeded school-owner account '{Username}'", ownerUsername);
+        if (passwordWasGenerated)
+        {
+            Log.Warning("Seeded school-owner account '{Username}' with generated password '{Password}' -- log in and change it now, this is the only place it appears", ownerUsername, ownerPassword);
+        }
+        else
+        {
+            Log.Information("Seeded school-owner account '{Username}'", ownerUsername);
+        }
     }
 }
 

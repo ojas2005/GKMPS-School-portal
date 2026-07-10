@@ -74,6 +74,16 @@ public class PaymentsController : ControllerBase
         return Ok(ApiResponse<FeeSubmissionResult>.Ok(result, "Fee submitted."));
     }
 
+    // Creates an unpaid ad-hoc due (no payment, no receipt) -- e.g. a transport route's
+    // monthly fee added the moment a student is mapped to that route.
+    [HttpPost("students/{studentId:guid}/dues")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Accountant}")]
+    public async Task<IActionResult> AddAdHocDue(Guid studentId, [FromBody] AddAdHocDueRequest request, CancellationToken ct)
+    {
+        var result = await _feePaymentService.AddAdHocDueAsync(studentId, request, ct);
+        return Ok(ApiResponse<FeePaymentSummary>.Ok(result, "Due added."));
+    }
+
     // Every receipt for a student -- staff/teacher for any student, a student/parent
     // only their own (same scoping as the fee ledger above).
     [HttpGet("students/{studentId:guid}/transactions")]
