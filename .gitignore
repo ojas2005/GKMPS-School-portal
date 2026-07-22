@@ -10,3 +10,4 @@ appsettings.*.local.json
 !.env.example
 .claude/
 AZ-900_Study_Guide.pdf
+.DS_Store
