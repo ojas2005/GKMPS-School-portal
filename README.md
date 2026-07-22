@@ -2,13 +2,13 @@
 <img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:6366F1,100:22D3EE&height=200&section=header&text=GKMPS%20School%20ERP&fontSize=42&fontColor=ffffff&animation=fadeIn&fontAlignY=35&desc=ASP.NET%20Core%209%20Microservices%20Backend&descAlignY=55&descSize=16" />
 
 <a href="https://github.com/ojas2005/GKMPS-School-portal/actions/workflows/backend-ci.yml">
-  <img src="https://readme-typing-svg.demolab.com/?font=Fira+Code&size=20&pause=1000&color=6366F1&center=true&vCenter=true&width=650&lines=12+microservices+behind+one+API+gateway;JWT+auth+%2B+RBAC+%2B+event-driven+notifications;Owner-issued+accounts.+No+public+sign-up.;Built+with+ASP.NET+Core+9+%2B+PostgreSQL+%2B+RabbitMQ" alt="Typing SVG" />
+  <img src="https://readme-typing-svg.demolab.com/?font=Fira+Code&size=20&pause=1000&color=6366F1&center=true&vCenter=true&width=650&lines=12+microservices+behind+one+API+gateway;JWT+auth+%2B+RBAC+%2B+event-driven+notifications;Owner-issued+accounts.+No+public+sign-up.;Built+with+ASP.NET+Core+9+%2B+TiDB+%2B+RabbitMQ" alt="Typing SVG" />
 </a>
 
 <br/>
 
 ![.NET](https://img.shields.io/badge/.NET-9.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
+![TiDB](https://img.shields.io/badge/TiDB-MySQL_compatible-DD0031?style=for-the-badge&logo=mysql&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-cache-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 ![RabbitMQ](https://img.shields.io/badge/RabbitMQ-events-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white)
 ![CI](https://img.shields.io/github/actions/workflow/status/ojas2005/GKMPS-School-portal/backend-ci.yml?style=for-the-badge&label=CI&logo=githubactions&logoColor=white)
@@ -57,7 +57,8 @@ Swagger directly on its own port, and via the gateway at `/{service}/swagger`.
 ## Tech stack
 
 - **Framework** — ASP.NET Core 9, one microservice per domain, EF Core 9
-- **Data** — PostgreSQL 16 (one schema per service), Redis for read-through caching
+- **Data** — TiDB Cloud (MySQL-compatible, one database per service), Redis for
+  read-through caching
 - **Messaging** — RabbitMQ + MassTransit for cross-service events (Outbox pattern on
   Identity/Student/Fee)
 - **Gateway** — YARP: routing, JWT validation, rate limiting, aggregated health checks
@@ -70,20 +71,25 @@ Swagger directly on its own port, and via the gateway at `/{service}/swagger`.
 
 ## Getting started
 
-This backend expects the .NET 9 SDK and Docker locally.
+This backend expects the .NET 9 SDK, Docker, and a TiDB Cloud cluster (the free
+Serverless tier is enough to start).
 
 ```bash
 # configure environment
-cp .env.example .env   # fill in JWT_SIGNING_KEY (32+ chars) + Postgres/RabbitMQ passwords
+cp .env.example .env   # fill in JWT_SIGNING_KEY (32+ chars), TIDB_* connection details,
+                        # and RabbitMQ credentials
 
-# build & run everything: Postgres, Redis, RabbitMQ, all 12 services, and the gateway
+# build & run everything: Redis, RabbitMQ, all 12 services, and the gateway
 docker compose up --build
 ```
 
 Then open **http://localhost:5100** (gateway) or any service's own Swagger port (see
-table above). Log in with the seeded owner account (`ownerishim` / `Owner@1234`,
-override via `Owner:Username`/`Owner:Password`) — there's no public sign-up, only the
-owner can create further accounts via `POST /api/auth/register`.
+table above). On first boot, Identity.API seeds a `SuperAdmin` owner account
+(`ownerishim` by default, override via `Owner:Username`) — if `Owner:Password` /
+`OWNER_PASSWORD` isn't set, a random password is generated and printed once in that
+container's logs (`docker compose logs identity-api | grep generated`); log in with it
+and change it immediately. There's no public sign-up — only the owner can create
+further accounts, via `POST /api/auth/register`.
 
 ## Commands
 
@@ -117,7 +123,9 @@ Services/
   Reporting.API/               # Cross-service aggregates via Polly-wrapped HTTP clients, PDF export
 Gateway/
   SchoolERP.Gateway/          # YARP: routing, JWT validation, rate limiting, health aggregation
-scripts/                      # hand-authored SQL matching each service's EF model
+scripts/                      # legacy Postgres schema scripts for the local-only `postgres`
+                               # container in docker-compose.yml; every service now runs
+                               # against TiDB, created by each service's own EF migrations
 docker-compose.yml
 .env.example
 ```
