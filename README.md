@@ -102,6 +102,12 @@ further accounts, via `POST /api/auth/register`.
 | `dotnet build SchoolERP.sln` | Compile all services without Docker |
 | `dotnet ef migrations add <Name>` (run inside a service folder) | Add an EF Core migration |
 
+## Architecture
+
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the system diagram, event flow, the
+5-layer per-service anatomy, the auth/lockout/refresh sequence, the atomic-update
+pattern, and an ER diagram for every service.
+
 ## Project layout
 
 ```
