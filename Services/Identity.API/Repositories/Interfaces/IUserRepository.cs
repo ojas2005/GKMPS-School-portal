@@ -10,7 +10,6 @@ public interface IUserRepository
     /// <summary>Matches by username OR email (both case-insensitive).</summary>
     Task<User?> FindByLoginAsync(string loginId, CancellationToken ct = default);
     Task<bool> ExistsByUsernameAsync(string username, CancellationToken ct = default);
-    Task<User?> FindByGoogleSubjectIdAsync(string googleSubjectId, CancellationToken ct = default);
     Task<IReadOnlyList<User>> SearchUsersAsync(string? role, string? keyword, int page, int pageSize, CancellationToken ct = default);
     Task<int> CountUsersAsync(string? role, CancellationToken ct = default);
     Task<bool> ExistsByEmailAsync(string email, CancellationToken ct = default);

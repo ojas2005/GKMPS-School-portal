@@ -15,8 +15,6 @@ public record LoginRequest(
     [Required] string LoginId,
     [Required] string Password);
 
-public record GoogleLoginRequest([Required] string IdToken);
-
 public record RefreshRequest([Required] string AccessToken, [Required] string RefreshToken);
 
 public record AuthResult(

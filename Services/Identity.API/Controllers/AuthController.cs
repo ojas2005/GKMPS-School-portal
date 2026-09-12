@@ -55,22 +55,6 @@ public class AuthController : ControllerBase
         }
     }
 
-    [HttpPost("login/google")]
-    [AllowAnonymous]
-    public async Task<IActionResult> LoginWithGoogle([FromBody] GoogleLoginRequest request, CancellationToken ct)
-    {
-        try
-        {
-            var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
-            var result = await _authService.LoginWithGoogleAsync(request, ip, ct);
-            return Ok(ApiResponse<AuthResult>.Ok(result, "Login successful."));
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(ApiResponse<object>.Fail(ex.Message));
-        }
-    }
-
     [HttpPost("refresh")]
     [AllowAnonymous]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest request, CancellationToken ct)

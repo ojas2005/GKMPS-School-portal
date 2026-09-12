@@ -6,10 +6,11 @@ public record StudentProfile(Guid StudentId, string ClassId, string SectionId);
 
 /// <summary>
 /// Resolves the Student profile linked to a user account so Identity can embed
-/// studentId/classId/sectionId claims in the access token. Reads the student schema
-/// directly (all services share one Postgres database); fully-qualifies the table so
-/// the connection's SearchPath is irrelevant. Best-effort: any failure returns null so
-/// login is never blocked (staff accounts simply have no student profile).
+/// studentId/classId/sectionId claims in the access token. Reads the `student` database
+/// directly via a cross-database query (every service's database lives on the same TiDB
+/// cluster, reachable from any service's connection string with a fully-qualified
+/// `database`.`table` reference). Best-effort: any failure returns null so login is
+/// never blocked (staff accounts simply have no student profile).
 /// </summary>
 public class StudentProfileResolver
 {

@@ -68,7 +68,7 @@ builder.Services.AddMassTransit(x =>
     });
 });
 
-// ---------- AuthN: JWT Bearer (primary) + Google (external login handshake) ----------
+// ---------- AuthN: JWT Bearer ----------
 var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
 var signingKey = jwtSection["SigningKey"]!;
 

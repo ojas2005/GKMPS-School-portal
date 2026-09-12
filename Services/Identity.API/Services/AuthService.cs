@@ -1,4 +1,3 @@
-using Google.Apis.Auth;
 using MassTransit;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Caching.Distributed;
@@ -16,8 +15,8 @@ namespace SchoolERP.Identity.Services;
 
 /// <summary>
 /// Owns every workflow rule around authentication: password verification, refresh-token
-/// rotation, Google OAuth account linking, and account-lockout style checks. Controllers
-/// never touch a repository directly -- that coordination lives here.
+/// rotation, and account-lockout style checks. Controllers never touch a repository
+/// directly -- that coordination lives here.
 /// </summary>
 public class AuthService : IAuthService
 {
@@ -31,7 +30,6 @@ public class AuthService : IAuthService
     private readonly StaffProfileResolver _staffProfiles;
     private readonly JwtOptions _jwtOptions;
     private readonly ILogger<AuthService> _logger;
-    private readonly string? _googleClientId;
     private readonly int _maxFailedAttempts;
     private readonly TimeSpan _lockoutDuration;
 
@@ -56,7 +54,6 @@ public class AuthService : IAuthService
         _staffProfiles = staffProfiles;
         _jwtOptions = jwtOptions.Value;
         _logger = logger;
-        _googleClientId = configuration["Authentication:Google:ClientId"];
         _maxFailedAttempts = configuration.GetValue("AccountLockout:MaxFailedAttempts", 5);
         _lockoutDuration = TimeSpan.FromMinutes(configuration.GetValue("AccountLockout:LockoutMinutes", 15));
     }
@@ -128,7 +125,7 @@ public class AuthService : IAuthService
                 $"Too many failed attempts. Try again after {lockoutEnd:HH:mm} UTC.");
 
         if (string.IsNullOrEmpty(user.PasswordHash))
-            throw new UnauthorizedAccessException("This account signs in via Google only.");
+            throw new UnauthorizedAccessException("This account has no password set. Contact the school administrator.");
 
         var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
         if (verifyResult == PasswordVerificationResult.Failed)
@@ -156,61 +153,6 @@ public class AuthService : IAuthService
         }
 
         await _users.ResetFailedLoginAsync(user.Id, ct);
-        await _users.UpdateLastLoginAsync(user.Id, DateTime.UtcNow, ct);
-
-        return await IssueTokensAsync(user, ipAddress, ct);
-    }
-
-    public async Task<AuthResult> LoginWithGoogleAsync(GoogleLoginRequest request, string? ipAddress, CancellationToken ct = default)
-    {
-        GoogleJsonWebSignature.Payload payload;
-        try
-        {
-            var settings = new GoogleJsonWebSignature.ValidationSettings
-            {
-                Audience = string.IsNullOrEmpty(_googleClientId) ? null : new[] { _googleClientId }
-            };
-            payload = await GoogleJsonWebSignature.ValidateAsync(request.IdToken, settings);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Google ID token validation failed");
-            throw new UnauthorizedAccessException("Invalid Google credential.");
-        }
-
-        var user = await _users.FindByGoogleSubjectIdAsync(payload.Subject, ct)
-                   ?? await _users.FindByEmailAsync(payload.Email, ct);
-
-        if (user is null)
-        {
-            user = new User
-            {
-                Email = payload.Email.ToLowerInvariant(),
-                FullName = payload.Name ?? payload.Email,
-                Role = RoleNames.Student, // default; an Admin can elevate the role afterwards
-                IsEmailVerified = payload.EmailVerified,
-                GoogleSubjectId = payload.Subject
-            };
-            await _users.AddAsync(user, ct);
-            await _users.SaveChangesAsync(ct);
-
-            await _publishEndpoint.Publish(new UserRegisteredEvent
-            {
-                UserId = user.Id,
-                Email = user.Email,
-                Role = user.Role
-            }, ct);
-        }
-        else if (user.GoogleSubjectId is null)
-        {
-            // Link the existing password-based account to this Google identity.
-            user.GoogleSubjectId = payload.Subject;
-            await _users.SaveChangesAsync(ct);
-        }
-
-        if (!user.IsActive)
-            throw new UnauthorizedAccessException("This account has been deactivated.");
-
         await _users.UpdateLastLoginAsync(user.Id, DateTime.UtcNow, ct);
 
         return await IssueTokensAsync(user, ipAddress, ct);
@@ -333,7 +275,7 @@ public class AuthService : IAuthService
 
     /// <summary>
     /// Mirrors the active refresh token into Redis so the YARP gateway can do a fast
-    /// revocation check without round-tripping to Postgres on every request.
+    /// revocation check without round-tripping to TiDB on every request.
     /// </summary>
     private Task CacheActiveRefreshTokenAsync(Guid userId, string tokenHash, CancellationToken ct) =>
         _cache.SetStringAsync(

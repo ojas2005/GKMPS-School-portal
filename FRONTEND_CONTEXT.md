@@ -38,8 +38,6 @@ with no response body, check this first.
    original request.
 6. `POST {base}/api/auth/logout` with `{ refreshToken }` (needs `Authorization` header
    too) revokes that refresh token server-side.
-7. Google sign-in: `POST {base}/api/auth/login/google` with `{ idToken }` (the ID token
-   from Google's client-side sign-in flow) → same `AuthResult` shape.
 
 Roles (exact strings, case-sensitive, used in JWT `role` claim and everywhere
 `[Authorize(Roles=...)]` appears): `SuperAdmin`, `Principal`, `Admin`, `Teacher`,
@@ -91,7 +89,6 @@ means any authenticated user can call it.
 |---|---|---|
 | `POST /api/auth/register` `[public]` | — | |
 | `POST /api/auth/login` `[public]` | — | |
-| `POST /api/auth/login/google` `[public]` | — | |
 | `POST /api/auth/refresh` `[public]` | — | |
 | `POST /api/auth/logout` | — | |
 | `GET /api/users/{id}` | — | |

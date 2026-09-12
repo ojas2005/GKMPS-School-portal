@@ -37,7 +37,7 @@ Interface` → `Service Implementation` → `Controller`.
 
 | Service | Port | Owns | Publishes |
 |---|---|---|---|
-| Identity.API | 5101 | Accounts, JWT + refresh rotation, Google OAuth, RBAC | `UserRegisteredEvent` |
+| Identity.API | 5101 | Accounts, JWT + refresh rotation, RBAC | `UserRegisteredEvent` |
 | Student.API | 5102 | Admissions, class/section moves, transfer certificates | `StudentEnrolledEvent`, `CertificateGeneratedEvent` |
 | Staff.API | 5103 | Staff profiles, two-step leave approval | — |
 | Attendance.API | 5104 | Daily attendance, atomic present/absent/late counters | — |
@@ -63,7 +63,7 @@ Swagger directly on its own port, and via the gateway at `/{service}/swagger`.
   Identity/Student/Fee)
 - **Gateway** — YARP: routing, JWT validation, rate limiting, aggregated health checks
 - **Auth** — PBKDF2+HMAC-SHA256 password hashing, 15-min JWTs, rotated 7-day refresh
-  tokens (hashed at rest), Google OAuth
+  tokens (hashed at rest)
 - **Docs/Reliability** — Swagger per service, QuestPDF for certificates/report
   cards/receipts, Polly retry + circuit breaker on Reporting.API's inter-service calls,
   Serilog audit logging
@@ -115,7 +115,7 @@ SchoolERP.sln
 BuildingBlocks/
   SchoolERP.Shared/          # BaseEntity, AuditLog, ApiResponse, RoleNames, event contracts
 Services/
-  Identity.API/               # Accounts, JWT + refresh rotation, Google OAuth, RBAC
+  Identity.API/               # Accounts, JWT + refresh rotation, RBAC
   Student.API/                # Admissions, class/section management, transfer certificates
   Staff.API/                  # Staff profiles, two-step leave approval workflow
   Attendance.API/             # Daily attendance, atomic present/absent/late counters
@@ -129,9 +129,10 @@ Services/
   Reporting.API/               # Cross-service aggregates via Polly-wrapped HTTP clients, PDF export
 Gateway/
   SchoolERP.Gateway/          # YARP: routing, JWT validation, rate limiting, health aggregation
-scripts/                      # legacy Postgres schema scripts for the local-only `postgres`
-                               # container in docker-compose.yml; every service now runs
-                               # against TiDB, created by each service's own EF migrations
+scripts/                      # legacy Postgres schema scripts, kept for historical reference
+                               # only -- the local postgres container was removed from
+                               # docker-compose.yml; every service runs against TiDB, with
+                               # its own database created by each service's own EF migrations
 docker-compose.yml
 .env.example
 ```

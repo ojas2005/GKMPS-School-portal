@@ -30,9 +30,6 @@ public class UserRepository : IUserRepository
         return _db.Users.AnyAsync(u => u.Username != null && u.Username.ToLower() == normalized, ct);
     }
 
-    public Task<User?> FindByGoogleSubjectIdAsync(string googleSubjectId, CancellationToken ct = default) =>
-        _db.Users.FirstOrDefaultAsync(u => u.GoogleSubjectId == googleSubjectId, ct);
-
     public async Task<IReadOnlyList<User>> SearchUsersAsync(string? role, string? keyword, int page, int pageSize, CancellationToken ct = default)
     {
         var query = _db.Users.AsQueryable();
