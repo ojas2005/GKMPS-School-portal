@@ -48,6 +48,12 @@ public class NotificationService : INotificationService
                 _ => false
             };
         }
+        catch (NotSupportedException ex)
+        {
+            // Expected when a channel has no provider configured -- recorded, not alarming.
+            await _logs.MarkFailedAsync(log.Id, ex.Message, ct);
+            return;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Dispatch failed for {EventType} to {Recipient}", eventType, recipientReference);
