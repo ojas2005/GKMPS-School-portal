@@ -19,4 +19,25 @@ public static class RoleNames
     {
         SuperAdmin, Principal, Admin, Teacher, Student, Parent, Accountant, Librarian
     };
+
+    /// <summary>
+    /// Administrative rank: SuperAdmin (the owner) &gt; Principal &gt; Admin &gt; everyone else.
+    /// Account-management actions (create, reset password, activate/deactivate) are only
+    /// allowed downward, so an Admin can never mint a SuperAdmin or take over the owner.
+    /// </summary>
+    public static int Rank(string? role) => role switch
+    {
+        SuperAdmin => 3,
+        Principal => 2,
+        Admin => 1,
+        _ => 0
+    };
+
+    /// <summary>
+    /// True if <paramref name="actorRole"/> may create or administer an account holding
+    /// <paramref name="targetRole"/>. The owner may manage every role (including other
+    /// SuperAdmins); everyone else only roles strictly below their own.
+    /// </summary>
+    public static bool CanManageRole(string? actorRole, string? targetRole) =>
+        actorRole == SuperAdmin || (Rank(actorRole) > 0 && Rank(actorRole) > Rank(targetRole));
 }

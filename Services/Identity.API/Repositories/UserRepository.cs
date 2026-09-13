@@ -103,5 +103,11 @@ public class UserRepository : IUserRepository
                 .SetProperty(u => u.LockoutEndUtc, (DateTime?)null)
                 .SetProperty(u => u.UpdatedAtUtc, DateTime.UtcNow), ct);
 
+    public async Task HardDeleteAsync(Guid userId, CancellationToken ct = default)
+    {
+        await _db.RefreshTokens.Where(rt => rt.UserId == userId).ExecuteDeleteAsync(ct);
+        await _db.Users.IgnoreQueryFilters().Where(u => u.Id == userId).ExecuteDeleteAsync(ct);
+    }
+
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }

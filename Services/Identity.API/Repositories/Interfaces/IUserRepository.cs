@@ -34,5 +34,9 @@ public interface IUserRepository
     /// <summary>Clears the failure counter and any lockout -- called on a successful login.</summary>
     Task<int> ResetFailedLoginAsync(Guid userId, CancellationToken ct = default);
 
+    /// <summary>Removes the user row and its refresh tokens outright (not a soft delete, so
+    /// the email/login ID can be reused).</summary>
+    Task HardDeleteAsync(Guid userId, CancellationToken ct = default);
+
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }
