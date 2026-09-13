@@ -21,8 +21,8 @@ public class ParentMessageRepository : IParentMessageRepository
     public async Task AddAsync(ParentMessage message, CancellationToken ct = default) =>
         await _db.ParentMessages.AddAsync(message, ct);
 
-    public Task<int> MarkReadAsync(Guid messageId, CancellationToken ct = default) =>
-        _db.ParentMessages.Where(m => m.Id == messageId)
+    public Task<int> MarkReadAsync(Guid messageId, Guid recipientUserId, CancellationToken ct = default) =>
+        _db.ParentMessages.Where(m => m.Id == messageId && m.RecipientUserId == recipientUserId)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(m => m.IsRead, true)
                 .SetProperty(m => m.ReadAtUtc, DateTime.UtcNow), ct);

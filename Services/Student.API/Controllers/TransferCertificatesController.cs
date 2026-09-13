@@ -63,8 +63,13 @@ public class TransferCertificatesController : ControllerBase
     {
         try
         {
-            var sasUrl = await _certificateService.GenerateAndGetDownloadUrlAsync(id, ct);
+            var requiredStudentId = User.IsSelfServiceRole() ? User.StudentId() ?? Guid.Empty : (Guid?)null;
+            var sasUrl = await _certificateService.GenerateAndGetDownloadUrlAsync(id, requiredStudentId, ct);
             return Ok(ApiResponse<object>.Ok(new { downloadUrl = sasUrl, expiresInMinutes = 15 }));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
         }
         catch (KeyNotFoundException ex)
         {

@@ -9,7 +9,7 @@ public interface IParentMessageRepository
     Task AddAsync(ParentMessage message, CancellationToken ct = default);
 
     /// <summary>Atomic read-flag flip -- no load-then-save.</summary>
-    Task<int> MarkReadAsync(Guid messageId, CancellationToken ct = default);
+    Task<int> MarkReadAsync(Guid messageId, Guid recipientUserId, CancellationToken ct = default);
 
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }

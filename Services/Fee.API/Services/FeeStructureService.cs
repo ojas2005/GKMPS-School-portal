@@ -28,7 +28,7 @@ public class FeeStructureService : IFeeStructureService
         return ToSummary(structure);
     }
 
-    public async Task<IReadOnlyList<FeeStructureSummary>> GetByClassAsync(string classId, string academicYear, CancellationToken ct = default)
+    public async Task<IReadOnlyList<FeeStructureSummary>> GetByClassAsync(string? classId, string? academicYear, CancellationToken ct = default)
     {
         var items = await _structures.FindByClassAsync(classId, academicYear, ct);
         return items.Select(ToSummary).ToList();

@@ -19,6 +19,10 @@ public class LeaveRequestsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Request(Guid staffId, [FromBody] RequestLeaveRequest request, CancellationToken ct)
     {
+        // Staff apply for their own leave; admins may file on someone's behalf.
+        if (!User.CanAccessStaff(staffId))
+            return Forbid();
+
         try
         {
             var result = await _leaveRequestService.RequestAsync(staffId, request, ct);

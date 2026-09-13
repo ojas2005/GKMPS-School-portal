@@ -31,8 +31,11 @@ public class SubjectsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetByClass([FromQuery] string classId, CancellationToken ct)
+    public async Task<IActionResult> GetByClass([FromQuery] string? classId, CancellationToken ct)
     {
+        if (User.IsSelfServiceRole())
+            classId ??= User.ClassId();
+
         // Students/parents may only read their OWN class's subjects & syllabus.
         if (!User.CanAccessClass(classId))
             return Forbid();

@@ -24,8 +24,17 @@ public class FeeStructuresController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetByClass([FromQuery] string classId, [FromQuery] string academicYear, CancellationToken ct)
+    public async Task<IActionResult> GetByClass([FromQuery] string? classId, [FromQuery] string? academicYear, CancellationToken ct)
     {
+        // Both filters are optional for staff (omit to list everything); students/parents
+        // only ever see their own class's structures.
+        if (User.IsSelfServiceRole())
+        {
+            classId ??= User.ClassId();
+            if (!User.CanAccessClass(classId))
+                return Forbid();
+        }
+
         var result = await _feeStructureService.GetByClassAsync(classId, academicYear, ct);
         return Ok(ApiResponse<object>.Ok(result));
     }

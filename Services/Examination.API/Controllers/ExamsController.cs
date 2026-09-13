@@ -42,8 +42,16 @@ public class ExamsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetByClass([FromQuery] string classId, CancellationToken ct)
+    public async Task<IActionResult> GetByClass([FromQuery] string? classId, CancellationToken ct)
     {
+        // Staff may list every class's exams (no classId = all); students/parents only their own class.
+        if (User.IsSelfServiceRole())
+        {
+            classId ??= User.ClassId();
+            if (!User.CanAccessClass(classId))
+                return Forbid();
+        }
+
         var result = await _examService.GetByClassAsync(classId, ct);
         return Ok(ApiResponse<object>.Ok(result));
     }

@@ -26,6 +26,12 @@ public class PayoutsController : ControllerBase
     public async Task<IActionResult> Record([FromBody] RecordPayoutRequest request, CancellationToken ct)
     {
         var recordedBy = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!);
+
+        // Segregation of duties: nobody but the owner records a salary payout to themselves.
+        if (User.Role() != RoleNames.SuperAdmin && User.StaffId() == request.StaffId)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponse<object>.Fail("You cannot record a salary payout to yourself."));
+
         try
         {
             var result = await _payroll.RecordPayoutAsync(request, recordedBy, ct);

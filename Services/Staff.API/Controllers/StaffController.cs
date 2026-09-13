@@ -42,14 +42,21 @@ public class StaffController : ControllerBase
             : Ok(ApiResponse<StaffSummary>.Ok(staff));
     }
 
+    // Anyone signed in may look a staff member up (a student's timetable shows teacher
+    // names), but salary and contact details are only returned to admins, the accountant
+    // (payroll), and the staff member themselves.
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
         var staff = await _staffService.GetByIdAsync(id, ct);
-        return staff is null ? NotFound(ApiResponse<object>.Fail("Staff member not found.")) : Ok(ApiResponse<StaffSummary>.Ok(staff));
+        if (staff is null) return NotFound(ApiResponse<object>.Fail("Staff member not found."));
+
+        var canSeePrivate = User.CanAccessStaff(id) || User.Role() == RoleNames.Accountant;
+        return Ok(ApiResponse<StaffSummary>.Ok(canSeePrivate ? staff : staff with { MonthlySalary = null, Phone = null, Email = null }));
     }
 
     [HttpGet]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Accountant}")]
     public async Task<IActionResult> Search([FromQuery] string? designation, [FromQuery] string? keyword, [FromQuery] int page = 1, [FromQuery] int pageSize = 25, CancellationToken ct = default)
     {
         var result = await _staffService.SearchAsync(designation, keyword, page, pageSize, ct);

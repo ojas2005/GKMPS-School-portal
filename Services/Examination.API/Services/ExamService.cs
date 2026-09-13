@@ -46,7 +46,7 @@ public class ExamService : IExamService
         return ToSummary(exam);
     }
 
-    public async Task<IReadOnlyList<ExamSummary>> GetByClassAsync(string classId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ExamSummary>> GetByClassAsync(string? classId, CancellationToken ct = default)
     {
         var exams = await _exams.FindByClassAsync(classId, ct);
         return exams.Select(ToSummary).ToList();

@@ -148,12 +148,10 @@ public class FeePaymentService : IFeePaymentService
             GatewayReference = gatewayReference
         };
         await _transactions.AddAsync(transaction, ct);
-        await _transactions.SaveChangesAsync(ct);
 
-        // Atomic increment -- never load PaidAmount, add in C#, and save the whole row back.
-        await _payments.IncrementPaidAmountAsync(payment.Id, amount, ct);
-        payment.PaidAmount += amount;
-
+        // Publish BEFORE SaveChanges: with the EF bus outbox, Publish only stages the message
+        // on the DbContext and the SaveChanges below writes it to the outbox in the same
+        // transaction. Publishing after the last SaveChanges silently drops the event.
         await _publishEndpoint.Publish(new FeePaidEvent
         {
             PaymentId = transaction.Id,
@@ -163,18 +161,28 @@ public class FeePaymentService : IFeePaymentService
             ReceiptNumber = receiptNumber
         }, ct);
 
+        await _transactions.SaveChangesAsync(ct);
+
+        // Atomic increment -- never load PaidAmount, add in C#, and save the whole row back.
+        await _payments.IncrementPaidAmountAsync(payment.Id, amount, ct);
+        payment.PaidAmount += amount;
+
         return transaction;
     }
 
-    public async Task<string> GetReceiptDownloadUrlAsync(Guid paymentTransactionId, CancellationToken ct = default)
+    public async Task<string> GetReceiptDownloadUrlAsync(Guid paymentTransactionId, Guid? requiredStudentId = null, CancellationToken ct = default)
     {
         var transaction = await _transactions.FindByIdAsync(paymentTransactionId, ct)
             ?? throw new KeyNotFoundException("Payment transaction not found.");
 
+        var payment = await _payments.FindByIdAsync(transaction.FeePaymentId, ct)
+            ?? throw new KeyNotFoundException("Fee payment not found.");
+
+        if (requiredStudentId.HasValue && payment.StudentId != requiredStudentId.Value)
+            throw new UnauthorizedAccessException("You can only download your own receipts.");
+
         if (string.IsNullOrEmpty(transaction.ReceiptBlobPath))
         {
-            var payment = await _payments.FindByIdAsync(transaction.FeePaymentId, ct)
-                ?? throw new KeyNotFoundException("Fee payment not found.");
 
             var pendingAmount = Math.Max(0, payment.TotalAmount - payment.PaidAmount - payment.WaiverAmount);
             var document = new ReceiptDocument(transaction.ReceiptNumber, transaction.Amount, transaction.PaymentMethod, transaction.PaidAtUtc, payment.StudentId, _schoolName, pendingAmount);

@@ -33,7 +33,8 @@ public class ParentMessageService : IParentMessageService
         return items.Select(ToSummary).ToList();
     }
 
-    public Task MarkReadAsync(Guid messageId, CancellationToken ct = default) => _messages.MarkReadAsync(messageId, ct);
+    public async Task<bool> MarkReadAsync(Guid messageId, Guid recipientUserId, CancellationToken ct = default) =>
+        await _messages.MarkReadAsync(messageId, recipientUserId, ct) > 0;
 
     private static ParentMessageSummary ToSummary(ParentMessage m) =>
         new(m.Id, m.StudentId, m.SenderUserId, m.RecipientUserId, m.Body, m.IsRead, m.CreatedAtUtc);
