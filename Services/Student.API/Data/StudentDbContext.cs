@@ -24,6 +24,7 @@ public class StudentDbContext : DbContext
             entity.HasIndex(s => s.AdmissionNumber).IsUnique();
             // Composite index on the hot lookup path: "all active students in a class/section".
             entity.HasIndex(s => new { s.ClassId, s.SectionId });
+            entity.HasIndex(s => s.ParentUserId);
             entity.Property(s => s.AdmissionNumber).HasMaxLength(50).IsRequired();
             entity.Property(s => s.FullName).HasMaxLength(200).IsRequired();
             entity.HasQueryFilter(s => !s.IsDeleted);

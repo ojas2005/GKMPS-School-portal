@@ -13,7 +13,8 @@ public record CreateStudentRequest(
     string? ParentName,
     [EmailAddress] string? ParentEmail,
     string? ParentPhone,
-    string? Address);
+    string? Address,
+    Guid? ParentUserId = null);
 
 public record ReassignClassRequest([Required] string ClassId, [Required] string SectionId);
 
@@ -34,7 +35,10 @@ public record UpdateStudentRequest(
 public record StudentSummary(
     Guid Id, Guid LinkedUserId, string AdmissionNumber, string FullName, DateTime DateOfBirth, string Gender,
     string ClassId, string SectionId, string Status, DateTime AdmissionDateUtc,
-    string? ParentName, string? ParentEmail, string? ParentPhone, string? Address);
+    string? ParentName, string? ParentEmail, string? ParentPhone, string? Address, Guid? ParentUserId = null);
+
+// Links (or with null, unlinks) the Parent-role login that may view this student's records.
+public record LinkParentAccountRequest(Guid? ParentUserId);
 
 public record UploadDocumentRequest([Required] string DocumentType, [Required] string ContentType);
 

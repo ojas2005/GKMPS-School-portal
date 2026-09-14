@@ -81,5 +81,12 @@ public class StudentRepository : IStudentRepository
         return grouped.ToDictionary(g => g.ClassId, g => g.Count);
     }
 
+    public Task<int> SetParentUserIdAsync(Guid studentId, Guid? parentUserId, CancellationToken ct = default) =>
+        _db.Students
+            .Where(s => s.Id == studentId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(s => s.ParentUserId, parentUserId)
+                .SetProperty(s => s.UpdatedAtUtc, DateTime.UtcNow), ct);
+
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }
