@@ -21,6 +21,14 @@ public class BookIssueRepository : IBookIssueRepository
     public Task<bool> HasActiveIssueAsync(Guid studentId, Guid bookId, CancellationToken ct = default) =>
         _db.BookIssues.AnyAsync(i => i.StudentId == studentId && i.BookId == bookId && i.ReturnedAtUtc == null, ct);
 
+    public async Task<IReadOnlyList<BookIssue>> ListAsync(bool activeOnly, Guid? studentId, int take, CancellationToken ct = default) =>
+        await _db.BookIssues
+            .Include(i => i.Book)
+            .Where(i => (!activeOnly || i.ReturnedAtUtc == null) && (studentId == null || i.StudentId == studentId))
+            .OrderByDescending(i => i.IssuedAtUtc)
+            .Take(take)
+            .ToListAsync(ct);
+
     public async Task AddAsync(BookIssue issue, CancellationToken ct = default) =>
         await _db.BookIssues.AddAsync(issue, ct);
 

@@ -15,6 +15,13 @@ public class BookIssuesController : ControllerBase
 
     public BookIssuesController(IBookIssueService issueService) => _issueService = issueService;
 
+    [HttpGet]
+    public async Task<IActionResult> List([FromQuery] bool activeOnly = true, [FromQuery] Guid? studentId = null, CancellationToken ct = default)
+    {
+        var result = await _issueService.ListAsync(activeOnly, studentId, ct);
+        return Ok(ApiResponse<object>.Ok(result));
+    }
+
     [HttpPost]
     public async Task<IActionResult> Issue([FromBody] IssueBookRequest request, CancellationToken ct)
     {
