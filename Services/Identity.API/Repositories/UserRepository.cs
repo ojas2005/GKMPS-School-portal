@@ -32,27 +32,30 @@ public class UserRepository : IUserRepository
 
     public async Task<IReadOnlyList<User>> SearchUsersAsync(string? role, string? keyword, int page, int pageSize, CancellationToken ct = default)
     {
-        var query = _db.Users.AsQueryable();
-
-        if (!string.IsNullOrWhiteSpace(role))
-            query = query.Where(u => u.Role == role);
-
-        if (!string.IsNullOrWhiteSpace(keyword))
-            query = query.Where(u => EF.Functions.Like(u.FullName, $"%{keyword}%") || EF.Functions.Like(u.Email, $"%{keyword}%"));
-
-        return await query
+        return await Filter(role, keyword)
             .OrderBy(u => u.FullName)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
     }
 
-    public Task<int> CountUsersAsync(string? role, CancellationToken ct = default)
+    public Task<int> CountUsersAsync(string? role, string? keyword, CancellationToken ct = default) =>
+        Filter(role, keyword).CountAsync(ct);
+
+    // Shared by search and count so the page total always matches the filtered results.
+    private IQueryable<User> Filter(string? role, string? keyword)
     {
         var query = _db.Users.AsQueryable();
+
         if (!string.IsNullOrWhiteSpace(role))
             query = query.Where(u => u.Role == role);
-        return query.CountAsync(ct);
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+            query = query.Where(u => EF.Functions.Like(u.FullName, $"%{keyword}%")
+                || EF.Functions.Like(u.Email, $"%{keyword}%")
+                || (u.Username != null && EF.Functions.Like(u.Username, $"%{keyword}%")));
+
+        return query;
     }
 
     public Task<bool> ExistsByEmailAsync(string email, CancellationToken ct = default) =>

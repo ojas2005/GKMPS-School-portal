@@ -135,8 +135,10 @@ public class StudentsController : ControllerBase
         }
     }
 
+    // Also called by Reporting.API on the caller's behalf, so every role that can open the
+    // enrollment report (including the accountant) needs access.
     [HttpGet("stats/active-by-class")]
-    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Teacher}")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Teacher},{RoleNames.Accountant}")]
     public async Task<IActionResult> ActiveCountByClass(CancellationToken ct)
     {
         var result = await _studentService.GetActiveCountByClassAsync(ct);

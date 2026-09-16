@@ -35,7 +35,7 @@ public class UserService : IUserService
         pageSize = pageSize is < 1 or > 200 ? 25 : pageSize;
 
         var users = await _users.SearchUsersAsync(role, keyword, page, pageSize, ct);
-        var total = await _users.CountUsersAsync(role, ct);
+        var total = await _users.CountUsersAsync(role, keyword, ct);
 
         return new PagedResult<UserSummary>
         {

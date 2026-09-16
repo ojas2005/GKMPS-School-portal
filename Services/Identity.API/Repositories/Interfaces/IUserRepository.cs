@@ -11,7 +11,7 @@ public interface IUserRepository
     Task<User?> FindByLoginAsync(string loginId, CancellationToken ct = default);
     Task<bool> ExistsByUsernameAsync(string username, CancellationToken ct = default);
     Task<IReadOnlyList<User>> SearchUsersAsync(string? role, string? keyword, int page, int pageSize, CancellationToken ct = default);
-    Task<int> CountUsersAsync(string? role, CancellationToken ct = default);
+    Task<int> CountUsersAsync(string? role, string? keyword, CancellationToken ct = default);
     Task<bool> ExistsByEmailAsync(string email, CancellationToken ct = default);
 
     Task AddAsync(User user, CancellationToken ct = default);
