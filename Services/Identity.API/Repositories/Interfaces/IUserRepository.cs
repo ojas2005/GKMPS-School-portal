@@ -10,9 +10,8 @@ public interface IUserRepository
     /// <summary>Matches by username OR email (both case-insensitive).</summary>
     Task<User?> FindByLoginAsync(string loginId, CancellationToken ct = default);
     Task<bool> ExistsByUsernameAsync(string username, CancellationToken ct = default);
-    Task<User?> FindByGoogleSubjectIdAsync(string googleSubjectId, CancellationToken ct = default);
     Task<IReadOnlyList<User>> SearchUsersAsync(string? role, string? keyword, int page, int pageSize, CancellationToken ct = default);
-    Task<int> CountUsersAsync(string? role, CancellationToken ct = default);
+    Task<int> CountUsersAsync(string? role, string? keyword, CancellationToken ct = default);
     Task<bool> ExistsByEmailAsync(string email, CancellationToken ct = default);
 
     Task AddAsync(User user, CancellationToken ct = default);
@@ -34,6 +33,10 @@ public interface IUserRepository
 
     /// <summary>Clears the failure counter and any lockout -- called on a successful login.</summary>
     Task<int> ResetFailedLoginAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>Removes the user row and its refresh tokens outright (not a soft delete, so
+    /// the email/login ID can be reused).</summary>
+    Task HardDeleteAsync(Guid userId, CancellationToken ct = default);
 
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }

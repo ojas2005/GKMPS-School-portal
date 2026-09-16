@@ -21,7 +21,7 @@ public class StudentEnrolledConsumer : IConsumer<StudentEnrolledEvent>
             recipientReference: e.ParentEmail,
             channel: "Email",
             subjectOrTitle: "Admission Confirmed",
-            body: $"{e.FullName} (Admission No. {e.AdmissionNumber}) has been admitted to class {e.ClassId}-{e.SectionId}. Welcome!",
+            body: $"{e.FullName} (Admission No. {e.AdmissionNumber}) has been admitted. Welcome to the school!",
             payload: e,
             ct: context.CancellationToken);
     }

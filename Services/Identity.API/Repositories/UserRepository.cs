@@ -30,10 +30,20 @@ public class UserRepository : IUserRepository
         return _db.Users.AnyAsync(u => u.Username != null && u.Username.ToLower() == normalized, ct);
     }
 
-    public Task<User?> FindByGoogleSubjectIdAsync(string googleSubjectId, CancellationToken ct = default) =>
-        _db.Users.FirstOrDefaultAsync(u => u.GoogleSubjectId == googleSubjectId, ct);
-
     public async Task<IReadOnlyList<User>> SearchUsersAsync(string? role, string? keyword, int page, int pageSize, CancellationToken ct = default)
+    {
+        return await Filter(role, keyword)
+            .OrderBy(u => u.FullName)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+    }
+
+    public Task<int> CountUsersAsync(string? role, string? keyword, CancellationToken ct = default) =>
+        Filter(role, keyword).CountAsync(ct);
+
+    // Shared by search and count so the page total always matches the filtered results.
+    private IQueryable<User> Filter(string? role, string? keyword)
     {
         var query = _db.Users.AsQueryable();
 
@@ -41,21 +51,11 @@ public class UserRepository : IUserRepository
             query = query.Where(u => u.Role == role);
 
         if (!string.IsNullOrWhiteSpace(keyword))
-            query = query.Where(u => EF.Functions.Like(u.FullName, $"%{keyword}%") || EF.Functions.Like(u.Email, $"%{keyword}%"));
+            query = query.Where(u => EF.Functions.Like(u.FullName, $"%{keyword}%")
+                || EF.Functions.Like(u.Email, $"%{keyword}%")
+                || (u.Username != null && EF.Functions.Like(u.Username, $"%{keyword}%")));
 
-        return await query
-            .OrderBy(u => u.FullName)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(ct);
-    }
-
-    public Task<int> CountUsersAsync(string? role, CancellationToken ct = default)
-    {
-        var query = _db.Users.AsQueryable();
-        if (!string.IsNullOrWhiteSpace(role))
-            query = query.Where(u => u.Role == role);
-        return query.CountAsync(ct);
+        return query;
     }
 
     public Task<bool> ExistsByEmailAsync(string email, CancellationToken ct = default) =>
@@ -105,6 +105,12 @@ public class UserRepository : IUserRepository
                 .SetProperty(u => u.FailedLoginAttempts, 0)
                 .SetProperty(u => u.LockoutEndUtc, (DateTime?)null)
                 .SetProperty(u => u.UpdatedAtUtc, DateTime.UtcNow), ct);
+
+    public async Task HardDeleteAsync(Guid userId, CancellationToken ct = default)
+    {
+        await _db.RefreshTokens.Where(rt => rt.UserId == userId).ExecuteDeleteAsync(ct);
+        await _db.Users.IgnoreQueryFilters().Where(u => u.Id == userId).ExecuteDeleteAsync(ct);
+    }
 
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }

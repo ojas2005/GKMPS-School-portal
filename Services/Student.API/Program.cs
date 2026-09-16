@@ -9,6 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 using QuestPDF.Infrastructure;
 using Serilog;
 using SchoolERP.Shared.ExceptionHandling;
+using SchoolERP.Shared.Hosting;
 using SchoolERP.Shared.Logging;
 using SchoolERP.Student.Data;
 using SchoolERP.Student.Repositories;
@@ -101,7 +102,7 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
         System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            partitionKey: SharedHosting.ClientPartitionKey(httpContext),
             factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
             {
                 PermitLimit = 200,
@@ -142,24 +143,35 @@ builder.Services.AddHealthChecks()
 
 builder.Services.AddSharedExceptionHandling();
 
+builder.Services.AddSharedForwardedHeaders();
+
 var app = builder.Build();
+
+// First in the pipeline: every later middleware (rate limiter, request logging) should see
+// the real client IP rather than the proxy hop in front of this service.
+app.UseForwardedHeaders();
 
 app.UseExceptionHandler();
 
 // Swagger is left on in every environment so it can be used for hands-on API testing
 // via the gateway or directly. Gate behind Development/an internal allowlist before a
 // real production rollout.
-app.UseSwagger();
-app.UseSwaggerUI(c =>
+if (app.IsSwaggerEnabled())
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Student.API v1");
-    c.RoutePrefix = "swagger";
-});
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Student.API v1");
+        c.RoutePrefix = "swagger";
+    });
+}
 
 app.UseSerilogRequestLogging();
 app.UseHttpsRedirection();
-app.UseRateLimiter();
+// Authentication runs first so the rate limiter can bucket by signed-in user (see
+// SharedHosting.ClientPartitionKey) instead of by the shared proxy IP.
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapControllers();
@@ -177,7 +189,7 @@ app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthC
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<StudentDbContext>();
-    db.Database.Migrate();
+    SharedHosting.MigrateWithRetry(() => db.Database.Migrate(), app.Logger);
 }
 
 app.Run();

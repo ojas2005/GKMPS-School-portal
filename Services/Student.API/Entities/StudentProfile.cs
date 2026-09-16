@@ -12,6 +12,12 @@ public class StudentProfile : BaseEntity
 {
     public Guid LinkedUserId { get; set; }
 
+    /// <summary>
+    /// Optional Parent-role account (Identity.API user) for this student's guardian. Identity
+    /// resolves it at login so the parent's token carries this student's id/class claims.
+    /// </summary>
+    public Guid? ParentUserId { get; set; }
+
     public required string AdmissionNumber { get; set; }
     public required string FullName { get; set; }
     public DateTime DateOfBirth { get; set; }

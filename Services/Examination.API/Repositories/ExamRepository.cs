@@ -14,8 +14,8 @@ public class ExamRepository : IExamRepository
     public Task<Exam?> FindByIdAsync(Guid id, CancellationToken ct = default) =>
         _db.Exams.FirstOrDefaultAsync(e => e.Id == id, ct);
 
-    public Task<IReadOnlyList<Exam>> FindByClassAsync(string classId, CancellationToken ct = default) =>
-        _db.Exams.Where(e => e.ClassId == classId).OrderByDescending(e => e.ExamDateUtc).ToListAsync(ct)
+    public Task<IReadOnlyList<Exam>> FindByClassAsync(string? classId, CancellationToken ct = default) =>
+        _db.Exams.Where(e => classId == null || e.ClassId == classId).OrderByDescending(e => e.ExamDateUtc).ToListAsync(ct)
             .ContinueWith(t => (IReadOnlyList<Exam>)t.Result, ct);
 
     public async Task AddAsync(Exam exam, CancellationToken ct = default) =>

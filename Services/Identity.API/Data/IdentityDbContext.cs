@@ -7,9 +7,9 @@ using SchoolERP.Shared.Entities;
 namespace SchoolERP.Identity.Data;
 
 /// <summary>
-/// Owns the "identity" PostgreSQL schema exclusively. No other microservice is permitted
-/// to query these tables directly -- everything crosses the boundary via Identity.API's
-/// HTTP endpoints or the events it publishes.
+/// Owns the "identity" database on the shared TiDB cluster exclusively. No other
+/// microservice is permitted to query these tables directly -- everything crosses the
+/// boundary via Identity.API's HTTP endpoints or the events it publishes.
 /// </summary>
 public class IdentityDbContext : DbContext
 {
@@ -28,7 +28,6 @@ public class IdentityDbContext : DbContext
             entity.HasIndex(u => u.Email).IsUnique();
             entity.HasIndex(u => u.Username).IsUnique();
             entity.Property(u => u.Username).HasMaxLength(100);
-            entity.HasIndex(u => u.GoogleSubjectId).IsUnique(false);
             entity.Property(u => u.Email).HasMaxLength(256).IsRequired();
             entity.Property(u => u.FullName).HasMaxLength(200).IsRequired();
             entity.Property(u => u.Role).HasMaxLength(50).IsRequired();

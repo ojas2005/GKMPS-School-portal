@@ -75,6 +75,15 @@ public class BookIssueService : IBookIssueService
         return ToSummary(issue);
     }
 
+    public async Task<IReadOnlyList<BookIssueDetail>> ListAsync(bool activeOnly, Guid? studentId, CancellationToken ct = default)
+    {
+        var issues = await _issues.ListAsync(activeOnly, studentId, take: 200, ct);
+        var now = DateTime.UtcNow;
+        return issues.Select(i => new BookIssueDetail(
+            i.Id, i.BookId, i.Book?.Title ?? "(removed book)", i.StudentId, i.IssuedAtUtc, i.DueDateUtc,
+            i.ReturnedAtUtc, i.FineAmount, i.ReturnedAtUtc == null && i.DueDateUtc < now)).ToList();
+    }
+
     private static BookIssueSummary ToSummary(BookIssue i) =>
         new(i.Id, i.BookId, i.StudentId, i.IssuedAtUtc, i.DueDateUtc, i.ReturnedAtUtc, i.FineAmount);
 }

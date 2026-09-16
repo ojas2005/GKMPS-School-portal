@@ -274,9 +274,6 @@ namespace SchoolERP.Identity.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)");
 
-                    b.Property<string>("GoogleSubjectId")
-                        .HasColumnType("varchar(255)");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 
@@ -315,8 +312,6 @@ namespace SchoolERP.Identity.Data.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique();
-
-                    b.HasIndex("GoogleSubjectId");
 
                     b.HasIndex("Username")
                         .IsUnique();

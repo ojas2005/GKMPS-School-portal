@@ -95,10 +95,13 @@ public class TransferCertificateService : ITransferCertificateService
         return ToSummary(refreshed);
     }
 
-    public async Task<string> GenerateAndGetDownloadUrlAsync(Guid certificateId, CancellationToken ct = default)
+    public async Task<string> GenerateAndGetDownloadUrlAsync(Guid certificateId, Guid? requiredStudentId = null, CancellationToken ct = default)
     {
         var certificate = await _certificates.FindByIdAsync(certificateId, ct)
             ?? throw new KeyNotFoundException("Transfer certificate request not found.");
+
+        if (requiredStudentId.HasValue && certificate.StudentId != requiredStudentId.Value)
+            throw new UnauthorizedAccessException("You can only download your own transfer certificate.");
 
         if (!certificate.IsApproved)
             throw new InvalidOperationException("The transfer certificate has not been approved yet.");
@@ -124,6 +127,10 @@ public class TransferCertificateService : ITransferCertificateService
                 SubjectId = student.Id,
                 VerificationCode = certificate.VerificationCode
             }, ct);
+
+            // MarkPdfGeneratedAsync is a direct ExecuteUpdate, so nothing else flushes the bus
+            // outbox here -- this SaveChanges is what actually persists the event above.
+            await _certificates.SaveChangesAsync(ct);
         }
 
         // Time-limited SAS URL -- never a permanent public link.

@@ -354,6 +354,10 @@ namespace SchoolERP.Student.Data.Migrations
                     b.Property<string>("ParentPhone")
                         .HasColumnType("longtext");
 
+                    b.Property<Guid?>("ParentUserId")
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
+
                     b.Property<string>("SectionId")
                         .IsRequired()
                         .HasColumnType("varchar(255)");
@@ -372,6 +376,8 @@ namespace SchoolERP.Student.Data.Migrations
 
                     b.HasIndex("AdmissionNumber")
                         .IsUnique();
+
+                    b.HasIndex("ParentUserId");
 
                     b.HasIndex("ClassId", "SectionId");
 

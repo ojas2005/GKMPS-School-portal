@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using SchoolERP.Shared.ExceptionHandling;
+using SchoolERP.Shared.Hosting;
 using SchoolERP.Shared.Logging;
 using SchoolERP.Identity.Auth;
 using SchoolERP.Identity.Data;
@@ -68,7 +69,7 @@ builder.Services.AddMassTransit(x =>
     });
 });
 
-// ---------- AuthN: JWT Bearer (primary) + Google (external login handshake) ----------
+// ---------- AuthN: JWT Bearer ----------
 var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
 var signingKey = jwtSection["SigningKey"]!;
 
@@ -102,7 +103,7 @@ builder.Services.AddRateLimiter(options =>
     // 60/min: behind the gateway every caller shares the gateway's IP, and the owner's
     // batch account creation (admissions/onboarding) goes through this policy too.
     options.AddPolicy("auth", httpContext => RateLimitPartition.GetFixedWindowLimiter(
-        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        partitionKey: SharedHosting.ClientPartitionKey(httpContext),
         factory: _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 60,
@@ -112,7 +113,7 @@ builder.Services.AddRateLimiter(options =>
 
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            partitionKey: SharedHosting.ClientPartitionKey(httpContext),
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 100,
@@ -155,24 +156,34 @@ builder.Services.AddHealthChecks()
 
 builder.Services.AddSharedExceptionHandling();
 
+builder.Services.AddSharedForwardedHeaders();
+
 var app = builder.Build();
+
+// First in the pipeline: every later middleware (rate limiter, request logging) should see
+// the real client IP rather than the proxy hop in front of this service.
+app.UseForwardedHeaders();
 
 app.UseExceptionHandler();
 
-// Swagger is left on in every environment (not gated to Development) so the gateway
-// can proxy each service's docs for hands-on API testing. Before a real production
-// rollout, gate this behind Development or an internal-only route/IP allowlist.
-app.UseSwagger();
-app.UseSwaggerUI(c =>
+// Swagger is off in Production unless Swagger__Enabled=true (see SharedHosting.IsSwaggerEnabled);
+// the gateway's /{service}/swagger routes return 404 while it is off.
+if (app.IsSwaggerEnabled())
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Identity.API v1");
-    c.RoutePrefix = "swagger";
-});
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Identity.API v1");
+        c.RoutePrefix = "swagger";
+    });
+}
 
 app.UseSerilogRequestLogging();
 app.UseHttpsRedirection();
-app.UseRateLimiter();
+// Authentication runs first so the rate limiter can bucket by signed-in user (see
+// SharedHosting.ClientPartitionKey) instead of by the shared proxy IP.
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapControllers();
@@ -192,7 +203,7 @@ app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthC
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
-    db.Database.Migrate();
+    SharedHosting.MigrateWithRetry(() => db.Database.Migrate(), app.Logger);
 
     // Seed the school-owner account: registration is closed to the public, so this is
     // the bootstrap identity every other account is created from. Credentials come from

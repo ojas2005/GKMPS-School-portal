@@ -18,7 +18,7 @@ public class UserRegisteredConsumer : IConsumer<UserRegisteredEvent>
             recipientReference: e.Email,
             channel: "Email",
             subjectOrTitle: "Welcome to the School Portal",
-            body: $"Hi, your {e.Role} account has been created. Please set your password to get started.",
+            body: $"Hi, your {e.Role} account on the school portal has been created. The school office will give you your login ID and password.",
             payload: e,
             ct: context.CancellationToken);
     }

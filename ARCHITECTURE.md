@@ -184,7 +184,6 @@ erDiagram
     string Role
     bool IsEmailVerified
     bool IsActive
-    string GoogleSubjectId
     datetime LastLoginAtUtc
     int FailedLoginAttempts
     datetime LockoutEndUtc

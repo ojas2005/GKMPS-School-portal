@@ -14,8 +14,8 @@ public class SubjectRepository : ISubjectRepository
     public Task<Subject?> FindByIdAsync(Guid id, CancellationToken ct = default) =>
         _db.Subjects.FirstOrDefaultAsync(s => s.Id == id, ct);
 
-    public Task<IReadOnlyList<Subject>> FindByClassAsync(string classId, CancellationToken ct = default) =>
-        _db.Subjects.Where(s => s.ClassId == classId).ToListAsync(ct)
+    public Task<IReadOnlyList<Subject>> FindByClassAsync(string? classId, CancellationToken ct = default) =>
+        _db.Subjects.Where(s => classId == null || s.ClassId == classId).ToListAsync(ct)
             .ContinueWith(t => (IReadOnlyList<Subject>)t.Result, ct);
 
     public Task<bool> ExistsAsync(string classId, string code, CancellationToken ct = default) =>

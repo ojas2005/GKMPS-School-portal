@@ -55,7 +55,7 @@ public class StudentsController : ControllerBase
     // record via GET /api/students/{id} using the studentId from their token. A teacher
     // is silently scoped to the class/section they are the class teacher of.
     [HttpGet]
-    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Teacher}")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Teacher},{RoleNames.Accountant},{RoleNames.Librarian}")]
     public async Task<IActionResult> Search([FromQuery] string? classId, [FromQuery] string? sectionId, [FromQuery] string? keyword, [FromQuery] int page = 1, [FromQuery] int pageSize = 25, CancellationToken ct = default)
     {
         if (User.Role() == RoleNames.Teacher)
@@ -115,8 +115,30 @@ public class StudentsController : ControllerBase
         }
     }
 
+    // Links the guardian's Parent-role login to this student (null unlinks). The parent must
+    // sign in again afterwards to pick up the student claims.
+    [HttpPatch("{id:guid}/parent-account")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin}")]
+    public async Task<IActionResult> LinkParentAccount(Guid id, [FromBody] LinkParentAccountRequest request, CancellationToken ct)
+    {
+        var actorUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? "unknown";
+        var actorRole = User.FindFirstValue(ClaimTypes.Role) ?? "unknown";
+
+        try
+        {
+            var result = await _studentService.LinkParentAccountAsync(id, request.ParentUserId, actorUserId, actorRole, ct);
+            return Ok(ApiResponse<StudentSummary>.Ok(result, request.ParentUserId is null ? "Parent login unlinked." : "Parent login linked."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
+    // Also called by Reporting.API on the caller's behalf, so every role that can open the
+    // enrollment report (including the accountant) needs access.
     [HttpGet("stats/active-by-class")]
-    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Teacher}")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Teacher},{RoleNames.Accountant}")]
     public async Task<IActionResult> ActiveCountByClass(CancellationToken ct)
     {
         var result = await _studentService.GetActiveCountByClassAsync(ct);

@@ -14,8 +14,8 @@ public class FeeStructureRepository : IFeeStructureRepository
     public Task<FeeStructure?> FindByIdAsync(Guid id, CancellationToken ct = default) =>
         _db.FeeStructures.FirstOrDefaultAsync(f => f.Id == id, ct);
 
-    public Task<IReadOnlyList<FeeStructure>> FindByClassAsync(string classId, string academicYear, CancellationToken ct = default) =>
-        _db.FeeStructures.Where(f => f.ClassId == classId && f.AcademicYear == academicYear).ToListAsync(ct)
+    public Task<IReadOnlyList<FeeStructure>> FindByClassAsync(string? classId, string? academicYear, CancellationToken ct = default) =>
+        _db.FeeStructures.Where(f => (classId == null || f.ClassId == classId) && (academicYear == null || f.AcademicYear == academicYear)).ToListAsync(ct)
             .ContinueWith(t => (IReadOnlyList<FeeStructure>)t.Result, ct);
 
     public async Task AddAsync(FeeStructure structure, CancellationToken ct = default) =>

@@ -37,7 +37,7 @@ Interface` → `Service Implementation` → `Controller`.
 
 | Service | Port | Owns | Publishes |
 |---|---|---|---|
-| Identity.API | 5101 | Accounts, JWT + refresh rotation, Google OAuth, RBAC | `UserRegisteredEvent` |
+| Identity.API | 5101 | Accounts, JWT + refresh rotation, RBAC | `UserRegisteredEvent` |
 | Student.API | 5102 | Admissions, class/section moves, transfer certificates | `StudentEnrolledEvent`, `CertificateGeneratedEvent` |
 | Staff.API | 5103 | Staff profiles, two-step leave approval | — |
 | Attendance.API | 5104 | Daily attendance, atomic present/absent/late counters | — |
@@ -63,7 +63,7 @@ Swagger directly on its own port, and via the gateway at `/{service}/swagger`.
   Identity/Student/Fee)
 - **Gateway** — YARP: routing, JWT validation, rate limiting, aggregated health checks
 - **Auth** — PBKDF2+HMAC-SHA256 password hashing, 15-min JWTs, rotated 7-day refresh
-  tokens (hashed at rest), Google OAuth
+  tokens (hashed at rest)
 - **Docs/Reliability** — Swagger per service, QuestPDF for certificates/report
   cards/receipts, Polly retry + circuit breaker on Reporting.API's inter-service calls,
   Serilog audit logging
@@ -71,20 +71,28 @@ Swagger directly on its own port, and via the gateway at `/{service}/swagger`.
 
 ## Getting started
 
-This backend expects the .NET 9 SDK, Docker, and a TiDB Cloud cluster (the free
-Serverless tier is enough to start).
+This backend expects the .NET 9 SDK and Docker. Production runs against a TiDB Cloud
+cluster (the free Serverless tier is enough); local development can use a TiDB
+container instead.
 
 ```bash
 # configure environment
-cp .env.example .env   # fill in JWT_SIGNING_KEY (32+ chars), TIDB_* connection details,
-                        # and RabbitMQ credentials
+cp .env.example .env
+#   JWT_SIGNING_KEY:   openssl rand -hex 32
+#   RABBITMQ_PASSWORD: any strong random value
+#   Database: either TIDB_* for TiDB Cloud, or uncomment the local-db block
+#             (COMPOSE_PROFILES=local-db, TIDB_HOST=tidb, TIDB_SSL_MODE=None, ...)
 
 # build & run everything: Redis, RabbitMQ, all 12 services, and the gateway
+# (plus the local TiDB container when COMPOSE_PROFILES=local-db)
 docker compose up --build
 ```
 
-Then open **http://localhost:5100** (gateway) or any service's own Swagger port (see
-table above). On first boot, Identity.API seeds a `SuperAdmin` owner account
+Services retry their startup migrations while the database comes up, so no manual
+ordering is needed.
+
+Then open **http://localhost:5100** (gateway). Swagger is off outside Development; set
+`Swagger__Enabled=true` on a service to turn it on (e.g. on a private staging box). On first boot, Identity.API seeds a `SuperAdmin` owner account
 (`ownerishim` by default, override via `Owner:Username`) — if `Owner:Password` /
 `OWNER_PASSWORD` isn't set, a random password is generated and printed once in that
 container's logs (`docker compose logs identity-api | grep generated`); log in with it
@@ -100,7 +108,23 @@ further accounts, via `POST /api/auth/register`.
 | `docker compose logs -f <service>` | Tail logs for one service (e.g. `fee-api`) |
 | `docker compose down` | Stop everything |
 | `dotnet build SchoolERP.sln` | Compile all services without Docker |
+| `dotnet test SchoolERP.sln` | Run the unit tests (`Tests/`) |
 | `dotnet ef migrations add <Name>` (run inside a service folder) | Add an EF Core migration |
+
+## Deploying
+
+- Use `docker compose --env-file .env.production up -d --build` with its own secrets
+  (never the local `.env` values), and **do not** set `COMPOSE_PROFILES=local-db` there.
+- Set `DOMAIN` to the public hostname (DNS pointing at the server, ports 80/443 open)
+  so Caddy obtains a real certificate, and `FRONTEND_URL` to the frontend's origin so the
+  gateway's CORS policy lets it through. If the frontend is served from the same domain,
+  its `config.json` can keep `apiBaseUrl` empty.
+- Set `OWNER_PASSWORD` for the first boot (or read the generated one from the
+  identity-api logs) and change it from **My account** after signing in.
+- Optionally configure `SMTP_*` so account and admission emails are actually delivered.
+- Rate limits are per signed-in user (or client IP when anonymous); the services trust
+  `X-Forwarded-For` from the proxy in front of them, so keep every service port bound to
+  loopback as in `docker-compose.yml`.
 
 ## Architecture
 
@@ -115,7 +139,7 @@ SchoolERP.sln
 BuildingBlocks/
   SchoolERP.Shared/          # BaseEntity, AuditLog, ApiResponse, RoleNames, event contracts
 Services/
-  Identity.API/               # Accounts, JWT + refresh rotation, Google OAuth, RBAC
+  Identity.API/               # Accounts, JWT + refresh rotation, RBAC
   Student.API/                # Admissions, class/section management, transfer certificates
   Staff.API/                  # Staff profiles, two-step leave approval workflow
   Attendance.API/             # Daily attendance, atomic present/absent/late counters
@@ -127,11 +151,14 @@ Services/
   Transport.API/              # Routes, vehicles, student-route mapping
   Notification.API/           # MassTransit consumers -> email/SMS/push fan-out
   Reporting.API/               # Cross-service aggregates via Polly-wrapped HTTP clients, PDF export
+Tests/
+  SchoolERP.Shared.Tests/     # xUnit: role hierarchy, claim scoping, rate-limit partitioning
 Gateway/
   SchoolERP.Gateway/          # YARP: routing, JWT validation, rate limiting, health aggregation
-scripts/                      # legacy Postgres schema scripts for the local-only `postgres`
-                               # container in docker-compose.yml; every service now runs
-                               # against TiDB, created by each service's own EF migrations
+scripts/                      # legacy Postgres schema scripts, kept for historical reference
+                               # only -- the local postgres container was removed from
+                               # docker-compose.yml; every service runs against TiDB, with
+                               # its own database created by each service's own EF migrations
 docker-compose.yml
 .env.example
 ```

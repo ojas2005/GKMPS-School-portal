@@ -101,8 +101,13 @@ public class PaymentsController : ControllerBase
     {
         try
         {
-            var url = await _feePaymentService.GetReceiptDownloadUrlAsync(transactionId, ct);
+            var requiredStudentId = User.IsSelfServiceRole() ? User.StudentId() ?? Guid.Empty : (Guid?)null;
+            var url = await _feePaymentService.GetReceiptDownloadUrlAsync(transactionId, requiredStudentId, ct);
             return Ok(ApiResponse<object>.Ok(new { downloadUrl = url, expiresInMinutes = 15 }));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
         }
         catch (KeyNotFoundException ex)
         {

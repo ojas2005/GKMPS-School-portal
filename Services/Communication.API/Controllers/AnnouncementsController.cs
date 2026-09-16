@@ -35,9 +35,28 @@ public class AnnouncementsController : ControllerBase
         }
     }
 
+    // Matches no class, so only school-wide (untargeted) announcements come back.
+    private const string NoClass = "__none__";
+
     [HttpGet]
     public async Task<IActionResult> GetRelevant([FromQuery] string? role, [FromQuery] string? classId, [FromQuery] int page = 1, [FromQuery] int pageSize = 25, CancellationToken ct = default)
     {
+        // Only the owner/principal/admin may browse every audience (the composer's history).
+        // Everyone else sees what is addressed to their OWN role and class, taken from the
+        // token -- never from the query string, which the caller controls.
+        if (User.Role() == RoleNames.Teacher)
+        {
+            // Teachers also see what they (or the office) sent to their own class's students,
+            // so the role filter is left open -- but the class is always their own.
+            role = null;
+            classId = User.ClassTeacherOfClassId() ?? NoClass;
+        }
+        else if (RoleNames.Rank(User.Role()) == 0)
+        {
+            role = User.Role();
+            classId = User.IsSelfServiceRole() ? User.ClassId() ?? NoClass : NoClass;
+        }
+
         var result = await _announcementService.GetRelevantAsync(role, classId, page, pageSize, ct);
         return Ok(ApiResponse<object>.Ok(result));
     }

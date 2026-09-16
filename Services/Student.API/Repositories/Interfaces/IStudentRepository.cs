@@ -21,5 +21,8 @@ public interface IStudentRepository
     /// <summary>Aggregate: total active admissions per class, computed in the database via GroupBy/Count, never pulled into memory.</summary>
     Task<IReadOnlyDictionary<string, int>> GetActiveCountByClassAsync(CancellationToken ct = default);
 
+    /// <summary>Atomic parent-account link/unlink.</summary>
+    Task<int> SetParentUserIdAsync(Guid studentId, Guid? parentUserId, CancellationToken ct = default);
+
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }

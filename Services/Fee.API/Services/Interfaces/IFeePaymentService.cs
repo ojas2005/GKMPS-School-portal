@@ -6,7 +6,9 @@ public interface IFeePaymentService
 {
     Task<FeePaymentSummary> RecordPaymentAsync(RecordPaymentRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<FeePaymentSummary>> GetPaymentsForStudentAsync(Guid studentId, CancellationToken ct = default);
-    Task<string> GetReceiptDownloadUrlAsync(Guid paymentTransactionId, CancellationToken ct = default);
+    /// <param name="requiredStudentId">When set (student/parent callers), the receipt must belong
+    /// to this student or an UnauthorizedAccessException is thrown.</param>
+    Task<string> GetReceiptDownloadUrlAsync(Guid paymentTransactionId, Guid? requiredStudentId = null, CancellationToken ct = default);
 
     Task RequestWaiverAsync(RequestWaiverRequest request, CancellationToken ct = default);
     Task ApproveWaiverAsync(Guid feePaymentId, ApproveWaiverRequest request, Guid approvedByUserId, CancellationToken ct = default);

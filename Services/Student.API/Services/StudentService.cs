@@ -55,13 +55,16 @@ public class StudentService : IStudentService
             ParentName = request.ParentName,
             ParentEmail = request.ParentEmail,
             ParentPhone = request.ParentPhone,
-            Address = request.Address
+            Address = request.Address,
+            ParentUserId = request.ParentUserId
         };
 
         await _students.AddAsync(student, ct);
-        await _students.SaveChangesAsync(ct);
 
-        // Async event: Notification.API sends a welcome email; Reporting.API updates enrollment totals.
+        // Publish BEFORE SaveChanges: with the EF bus outbox, Publish only stages the message
+        // on the DbContext and the SaveChanges below writes it to the outbox in the same
+        // transaction. Publishing after the last SaveChanges silently drops the event.
+        // Async event: Notification.API sends a welcome email.
         await _publishEndpoint.Publish(new StudentEnrolledEvent
         {
             StudentId = student.Id,
@@ -71,6 +74,8 @@ public class StudentService : IStudentService
             SectionId = student.SectionId,
             ParentEmail = student.ParentEmail
         }, ct);
+
+        await _students.SaveChangesAsync(ct);
 
         await _cache.RemoveAsync(ActiveCountsCacheKey, ct);
 
@@ -175,7 +180,23 @@ public class StudentService : IStudentService
         return counts;
     }
 
+    public async Task<StudentSummary> LinkParentAccountAsync(Guid studentId, Guid? parentUserId, string actorUserId, string actorRole, CancellationToken ct = default)
+    {
+        var student = await _students.FindByIdAsync(studentId, ct)
+            ?? throw new KeyNotFoundException("Student not found.");
+
+        var before = student.ParentUserId;
+        await _students.SetParentUserIdAsync(studentId, parentUserId, ct);
+        student.ParentUserId = parentUserId;
+
+        _logger.LogInformation(
+            "AUDIT actor={ActorUserId} role={ActorRole} action=Student.LinkParentAccount entity=Student entityId={StudentId} before={Before} after={After}",
+            actorUserId, actorRole, studentId, before, parentUserId);
+
+        return ToSummary(student);
+    }
+
     private static StudentSummary ToSummary(StudentProfile s) =>
         new(s.Id, s.LinkedUserId, s.AdmissionNumber, s.FullName, s.DateOfBirth, s.Gender, s.ClassId, s.SectionId, s.Status, s.AdmissionDateUtc,
-            s.ParentName, s.ParentEmail, s.ParentPhone, s.Address);
+            s.ParentName, s.ParentEmail, s.ParentPhone, s.Address, s.ParentUserId);
 }

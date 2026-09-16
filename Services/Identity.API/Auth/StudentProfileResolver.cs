@@ -6,10 +6,11 @@ public record StudentProfile(Guid StudentId, string ClassId, string SectionId);
 
 /// <summary>
 /// Resolves the Student profile linked to a user account so Identity can embed
-/// studentId/classId/sectionId claims in the access token. Reads the student schema
-/// directly (all services share one Postgres database); fully-qualifies the table so
-/// the connection's SearchPath is irrelevant. Best-effort: any failure returns null so
-/// login is never blocked (staff accounts simply have no student profile).
+/// studentId/classId/sectionId claims in the access token. Reads the `student` database
+/// directly via a cross-database query (every service's database lives on the same TiDB
+/// cluster, reachable from any service's connection string with a fully-qualified
+/// `database`.`table` reference). Best-effort: any failure returns null so login is
+/// never blocked (staff accounts simply have no student profile).
 /// </summary>
 public class StudentProfileResolver
 {
@@ -22,7 +23,9 @@ public class StudentProfileResolver
         _logger = logger;
     }
 
-    public async Task<StudentProfile?> ResolveByUserAsync(Guid userId, CancellationToken ct = default)
+    /// <param name="asParent">True for Parent-role accounts: match the student whose
+    /// ParentUserId is this user (their child) instead of the student's own login.</param>
+    public async Task<StudentProfile?> ResolveByUserAsync(Guid userId, bool asParent = false, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(_connectionString)) return null;
 
@@ -33,7 +36,8 @@ public class StudentProfileResolver
             await using var cmd = new MySqlCommand(
                 "SELECT `Id`, `ClassId`, `SectionId` " +
                 "FROM student.`Students` " +
-                "WHERE `LinkedUserId` = @uid AND `IsDeleted` = 0 " +
+                (asParent ? "WHERE `ParentUserId` = @uid " : "WHERE `LinkedUserId` = @uid ") +
+                "AND `IsDeleted` = 0 " +
                 "LIMIT 1",
                 conn);
             cmd.Parameters.AddWithValue("uid", userId);

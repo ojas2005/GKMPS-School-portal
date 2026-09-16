@@ -11,8 +11,8 @@ CORS, JWT validation, and rate limiting are enforced for browser traffic.
 
 | Environment | Base URL |
 |---|---|
-| Local (`docker compose up`) | `http://localhost:5100` |
-| Everywhere else | wherever the gateway is deployed |
+| Local (`docker compose up`) | `http://localhost:5100` (`ng serve` proxies `/api` to it) |
+| Everywhere else | set `apiBaseUrl` in the frontend's `public/config.json` (empty = same origin) |
 
 CORS on the gateway currently allows exactly one origin, read from `Cors:AllowedOrigins`
 in `Gateway/SchoolERP.Gateway/appsettings.json` (default `http://localhost:4200`, i.e.
@@ -24,22 +24,27 @@ with no response body, check this first.
 
 ## 2. Auth flow
 
-1. `POST {base}/api/auth/register` with `{ email, password, fullName, role }` → returns
-   `{ accessToken, refreshToken, accessTokenExpiresAtUtc, userId, email, fullName, role }`.
-2. `POST {base}/api/auth/login` with `{ email, password }` → same shape.
+1. `POST {base}/api/auth/register` with `{ email, username?, password, fullName, role }`
+   (owner/principal/admin only, and only for roles below the caller's own — see below) →
+   returns `{ accessToken, refreshToken, accessTokenExpiresAtUtc, userId, email, fullName, role }`.
+2. `POST {base}/api/auth/login` with `{ loginId, password }` (login ID or email) → same shape.
 3. Store `accessToken` in memory (not localStorage, to limit XSS blast radius) and
    `refreshToken` more durably (localStorage is acceptable given it's opaque and hashed
    server-side; httpOnly cookie is better if you want to invest in it later).
 4. Attach every request with `Authorization: Bearer {accessToken}`.
 5. `accessToken` expires in 15 minutes. On a 401, call `POST {base}/api/auth/refresh`
-   with `{ accessToken, refreshToken }` (yes, both — the expired access token is needed
-   to identify whose refresh token it is) → get a new pair back. This is a good fit for
-   an Angular `HttpInterceptor` that catches 401s, refreshes once, and retries the
-   original request.
-6. `POST {base}/api/auth/logout` with `{ refreshToken }` (needs `Authorization` header
-   too) revokes that refresh token server-side.
-7. Google sign-in: `POST {base}/api/auth/login/google` with `{ idToken }` (the ID token
-   from Google's client-side sign-in flow) → same `AuthResult` shape.
+   with `{ refreshToken, accessToken? }` → get a new pair back. The access token is
+   optional (after a page reload the in-memory one is gone); if you do send it, it must
+   belong to the same user. This is a good fit for an Angular `HttpInterceptor` that
+   catches 401s, refreshes once, and retries the original request.
+6. `POST {base}/api/auth/logout` with `{ refreshToken }` revokes that refresh token
+   server-side. No `Authorization` header needed.
+7. `POST {base}/api/auth/change-password` with `{ currentPassword, newPassword }`
+   (signed in) → a fresh token pair; every other session is revoked.
+
+Account management is hierarchical: the owner (`SuperAdmin`) can create and administer
+any account; a `Principal` only `Admin` and below; an `Admin` only non-admin roles.
+Nobody can deactivate their own account.
 
 Roles (exact strings, case-sensitive, used in JWT `role` claim and everywhere
 `[Authorize(Roles=...)]` appears): `SuperAdmin`, `Principal`, `Admin`, `Teacher`,
@@ -89,14 +94,16 @@ means any authenticated user can call it.
 
 | Method & path | Roles | Notes |
 |---|---|---|
-| `POST /api/auth/register` `[public]` | — | |
+| `POST /api/auth/register` | SuperAdmin, Principal, Admin | only roles below the caller's |
 | `POST /api/auth/login` `[public]` | — | |
-| `POST /api/auth/login/google` `[public]` | — | |
-| `POST /api/auth/refresh` `[public]` | — | |
-| `POST /api/auth/logout` | — | |
-| `GET /api/users/{id}` | — | |
-| `GET /api/users?role=&keyword=&page=&pageSize=` | SuperAdmin, Principal, Admin | |
-| `PATCH /api/users/{id}/status?isActive=` | SuperAdmin, Principal, Admin | |
+| `POST /api/auth/refresh` `[public]` | — | body `{refreshToken, accessToken?}` |
+| `POST /api/auth/logout` `[public]` | — | body `{refreshToken}` |
+| `POST /api/auth/change-password` | — | body `{currentPassword, newPassword}` |
+| `GET /api/users/{id}` | — | admins: anyone; others: only themselves |
+| `GET /api/users?role=&keyword=&page=&pageSize=` | SuperAdmin, Principal, Admin | keyword matches name, email, login ID |
+| `PATCH /api/users/{id}/status?isActive=` | SuperAdmin, Principal, Admin | lower-ranked accounts only |
+| `PATCH /api/users/{id}/password` | SuperAdmin, Principal, Admin | lower-ranked accounts only |
+| `DELETE /api/users/{id}` | SuperAdmin, Principal, Admin | never-used accounts only (onboarding rollback) |
 
 ### Student.API
 
@@ -104,12 +111,13 @@ means any authenticated user can call it.
 |---|---|---|
 | `POST /api/students` | SuperAdmin, Principal, Admin | admit |
 | `GET /api/students/{id}` | — | |
-| `GET /api/students?classId=&sectionId=&keyword=&page=&pageSize=` | — | |
+| `GET /api/students?classId=&sectionId=&keyword=&page=&pageSize=` | SuperAdmin, Principal, Admin, Teacher, Accountant, Librarian | teachers are scoped to the class they head |
 | `PATCH /api/students/{id}/class` | SuperAdmin, Principal, Admin | body `{classId, sectionId}` |
+| `PATCH /api/students/{id}/parent-account` | SuperAdmin, Principal, Admin | body `{parentUserId}` (null unlinks); the Parent login then gets this student's claims |
 | `GET /api/students/stats/active-by-class` | SuperAdmin, Principal, Admin, Teacher | Redis-cached 5 min |
 | `POST /api/transfer-certificates/students/{studentId}/request` | SuperAdmin, Principal, Admin, Teacher | body `{reason, requestedLeavingDateUtc}` |
 | `POST /api/transfer-certificates/{id}/approve` | SuperAdmin, Principal | |
-| `GET /api/transfer-certificates/{id}/download` | — | returns `{downloadUrl, expiresInMinutes}` — a 15-min SAS URL |
+| `GET /api/transfer-certificates/{id}/download` | — | returns `{downloadUrl, expiresInMinutes}` — a 15-min SAS URL; students/parents only their own |
 | `GET /api/transfer-certificates/verify/{code}` `[public]` | — | |
 
 ### Staff.API
@@ -117,9 +125,9 @@ means any authenticated user can call it.
 | Method & path | Roles | Notes |
 |---|---|---|
 | `POST /api/staff` | SuperAdmin, Principal, Admin | onboard |
-| `GET /api/staff/{id}` | — | |
-| `GET /api/staff?designation=&keyword=&page=&pageSize=` | — | |
-| `POST /api/staff/{staffId}/leave-requests` | — | body `{leaveType, fromDateUtc, toDateUtc, reason}` |
+| `GET /api/staff/{id}` | — | salary/phone/email only for admins, the accountant and the person themselves |
+| `GET /api/staff?designation=&keyword=&page=&pageSize=` | SuperAdmin, Principal, Admin, Accountant | |
+| `POST /api/staff/{staffId}/leave-requests` | — | yourself only (admins for anyone); body `{leaveType, fromDateUtc, toDateUtc, reason}` |
 | `POST /api/staff/{staffId}/leave-requests/{leaveRequestId}/decision` | SuperAdmin, Principal, Admin | body `{approve, note}` |
 
 ### Attendance.API
@@ -135,7 +143,7 @@ means any authenticated user can call it.
 | Method & path | Roles | Notes |
 |---|---|---|
 | `POST /api/subjects` | SuperAdmin, Principal, Admin | |
-| `GET /api/subjects?classId=` | — | |
+| `GET /api/subjects?classId=` | — | classId optional for staff; students/parents only their own class |
 | `PUT /api/timetables` | SuperAdmin, Principal, Admin | body `{classId, sectionId, slots: [...]}` |
 | `GET /api/timetables?classId=&sectionId=` | — | Redis-cached 5 min |
 | `POST /api/homework` | SuperAdmin, Principal, Admin, Teacher | |
@@ -146,7 +154,7 @@ means any authenticated user can call it.
 | Method & path | Roles | Notes |
 |---|---|---|
 | `POST /api/exams` | SuperAdmin, Principal, Admin, Teacher | |
-| `GET /api/exams?classId=` | — | |
+| `GET /api/exams?classId=` | — | classId optional for staff; students/parents only their own class |
 | `POST /api/exams/{examId}/publish` | SuperAdmin, Principal | two-step: publishes results |
 | `GET /api/exams/{examId}/stats` | SuperAdmin, Principal, Admin, Teacher | average + rankings |
 | `GET /api/exams/{examId}/students/{studentId}/report-card` | — | returns SAS URL; requires results published |
@@ -158,9 +166,9 @@ means any authenticated user can call it.
 | Method & path | Roles | Notes |
 |---|---|---|
 | `POST /api/fee-structures` | SuperAdmin, Principal, Admin, Accountant | |
-| `GET /api/fee-structures?classId=&academicYear=` | — | |
+| `GET /api/fee-structures?classId=&academicYear=` | — | both optional for staff; students/parents only their own class |
 | `POST /api/fee-payments` | SuperAdmin, Principal, Admin, Accountant | body `{studentId, feeStructureId, amount, paymentMethod, gatewayReference}` |
-| `GET /api/fee-payments/transactions/{transactionId}/receipt` | — | returns SAS URL |
+| `GET /api/fee-payments/transactions/{transactionId}/receipt` | — | returns SAS URL; students/parents only their own |
 | `POST /api/fee-payments/waivers/request` | SuperAdmin, Principal, Admin, Accountant | |
 | `POST /api/fee-payments/{feePaymentId}/waivers/approve` | SuperAdmin, Principal | |
 | `GET /api/fee-payments/collection-totals?fromUtc=&toUtc=` | SuperAdmin, Principal, Admin, Accountant | |
@@ -170,19 +178,20 @@ means any authenticated user can call it.
 | Method & path | Roles | Notes |
 |---|---|---|
 | `POST /api/announcements` | SuperAdmin, Principal, Admin | |
-| `GET /api/announcements?role=&classId=&page=&pageSize=` | — | |
-| `POST /api/parent-messages` | — | body `{studentId, recipientUserId, body}` |
-| `GET /api/parent-messages/students/{studentId}` | — | thread |
-| `POST /api/parent-messages/{messageId}/read` | — | |
+| `GET /api/announcements?role=&classId=&page=&pageSize=` | — | role/classId honoured for admins only; everyone else is scoped from their token. Returns a bare array |
+| `POST /api/parent-messages` | SuperAdmin, Principal, Admin, Teacher, Parent (own child) | body `{studentId, recipientUserId, body}` |
+| `GET /api/parent-messages/students/{studentId}` | same | thread; non-admins see only messages they sent or received |
+| `POST /api/parent-messages/{messageId}/read` | — | recipient only |
 
 ### Library.API
 
 | Method & path | Roles | Notes |
 |---|---|---|
 | `POST /api/books` | SuperAdmin, Principal, Admin, Librarian | |
-| `GET /api/books?keyword=&category=&page=&pageSize=` | — | |
-| `POST /api/book-issues` | SuperAdmin, Principal, Admin, Librarian | |
-| `POST /api/book-issues/return` | SuperAdmin, Principal, Admin, Librarian | |
+| `GET /api/books?keyword=&category=&page=&pageSize=` | — | returns a bare array |
+| `GET /api/book-issues?activeOnly=&studentId=` | SuperAdmin, Principal, Admin, Librarian | recent issues with book title and `isOverdue` |
+| `POST /api/book-issues` | SuperAdmin, Principal, Admin, Librarian | body `{bookId, studentId, dueDateUtc}` |
+| `POST /api/book-issues/return` | SuperAdmin, Principal, Admin, Librarian | body `{issueId}` |
 
 ### Transport.API
 
@@ -227,8 +236,9 @@ means any authenticated user can call it.
   real build — see the backend README's "A note on verification". If something 500s
   unexpectedly, it might be a backend compile issue, not a frontend bug.
 - No test data / seed script exists yet. Start every flow from `POST /api/auth/register`.
-- `Notification.API`'s dispatch is stubbed to logging only — no real email/SMS goes out
-  yet, so don't build UI that assumes a user actually received something.
+- `Notification.API` sends real email only when an SMTP relay is configured (`SMTP_*`
+  in `.env`); SMS and push have no provider yet. Don't build UI that assumes a user
+  actually received something.
 - CORS was just added and is unverified against a real browser — if you hit a CORS
   error immediately, double check `Cors:AllowedOrigins` matches your dev server's exact
   origin (scheme + host + port).

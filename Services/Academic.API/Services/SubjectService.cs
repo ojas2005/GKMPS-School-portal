@@ -30,7 +30,7 @@ public class SubjectService : ISubjectService
         return ToSummary(subject);
     }
 
-    public async Task<IReadOnlyList<SubjectSummary>> GetByClassAsync(string classId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<SubjectSummary>> GetByClassAsync(string? classId, CancellationToken ct = default)
     {
         var subjects = await _subjects.FindByClassAsync(classId, ct);
         return subjects.Select(ToSummary).ToList();

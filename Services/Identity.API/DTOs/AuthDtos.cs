@@ -15,9 +15,14 @@ public record LoginRequest(
     [Required] string LoginId,
     [Required] string Password);
 
-public record GoogleLoginRequest([Required] string IdToken);
+// AccessToken is optional: the frontend keeps it in memory only, so after a page reload
+// the refresh token (a 256-bit random value, stored hashed) is all it has. When the old
+// access token IS supplied, it must belong to the same user as the refresh token.
+public record RefreshRequest(string? AccessToken, [Required] string RefreshToken);
 
-public record RefreshRequest([Required] string AccessToken, [Required] string RefreshToken);
+public record LogoutRequest([Required] string RefreshToken);
+
+public record ChangePasswordRequest([Required] string CurrentPassword, [Required, MinLength(8)] string NewPassword);
 
 public record AuthResult(
     string AccessToken,

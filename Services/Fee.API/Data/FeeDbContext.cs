@@ -26,7 +26,7 @@ public class FeeDbContext : DbContext
 
         modelBuilder.Entity<FeePayment>(entity =>
         {
-            // Postgres treats NULLs as distinct in a unique index, so multiple ad-hoc
+            // MySQL/TiDB treats NULLs as distinct in a unique index, so multiple ad-hoc
             // (FeeStructureId == null) rows per student are still allowed here -- the
             // "only one opening balance per student" rule is enforced in the service layer.
             entity.HasIndex(p => new { p.StudentId, p.FeeStructureId }).IsUnique();

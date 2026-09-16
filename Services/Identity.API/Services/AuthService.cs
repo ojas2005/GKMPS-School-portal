@@ -1,4 +1,3 @@
-using Google.Apis.Auth;
 using MassTransit;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Caching.Distributed;
@@ -16,8 +15,8 @@ namespace SchoolERP.Identity.Services;
 
 /// <summary>
 /// Owns every workflow rule around authentication: password verification, refresh-token
-/// rotation, Google OAuth account linking, and account-lockout style checks. Controllers
-/// never touch a repository directly -- that coordination lives here.
+/// rotation, and account-lockout style checks. Controllers never touch a repository
+/// directly -- that coordination lives here.
 /// </summary>
 public class AuthService : IAuthService
 {
@@ -31,7 +30,6 @@ public class AuthService : IAuthService
     private readonly StaffProfileResolver _staffProfiles;
     private readonly JwtOptions _jwtOptions;
     private readonly ILogger<AuthService> _logger;
-    private readonly string? _googleClientId;
     private readonly int _maxFailedAttempts;
     private readonly TimeSpan _lockoutDuration;
 
@@ -56,16 +54,19 @@ public class AuthService : IAuthService
         _staffProfiles = staffProfiles;
         _jwtOptions = jwtOptions.Value;
         _logger = logger;
-        _googleClientId = configuration["Authentication:Google:ClientId"];
         _maxFailedAttempts = configuration.GetValue("AccountLockout:MaxFailedAttempts", 5);
         _lockoutDuration = TimeSpan.FromMinutes(configuration.GetValue("AccountLockout:LockoutMinutes", 15));
     }
 
-    // Resolves the linked student profile for self-service accounts (Student role).
+    // Resolves the linked student profile for self-service accounts: a Student's own record,
+    // or for a Parent the child whose record points at this login (StudentProfile.ParentUserId).
     private async Task<StudentProfile?> ResolveStudentProfileAsync(User user, CancellationToken ct) =>
-        user.Role == RoleNames.Student
-            ? await _studentProfiles.ResolveByUserAsync(user.Id, ct)
-            : null;
+        user.Role switch
+        {
+            RoleNames.Student => await _studentProfiles.ResolveByUserAsync(user.Id, asParent: false, ct),
+            RoleNames.Parent => await _studentProfiles.ResolveByUserAsync(user.Id, asParent: true, ct),
+            _ => null
+        };
 
     // Resolves the linked staff profile for staff-side accounts so the token carries
     // staffId + class-teacher scoping claims.
@@ -99,14 +100,18 @@ public class AuthService : IAuthService
         user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
 
         await _users.AddAsync(user, ct);
-        await _users.SaveChangesAsync(ct);
 
+        // Publish BEFORE SaveChanges: with the EF bus outbox the message is only written to
+        // the outbox table by the SaveChanges call that follows, in the same transaction as
+        // the new user row. Publishing after SaveChanges leaves it unsaved (silently lost).
         await _publishEndpoint.Publish(new UserRegisteredEvent
         {
             UserId = user.Id,
             Email = user.Email,
             Role = user.Role
         }, ct);
+
+        await _users.SaveChangesAsync(ct);
 
         _logger.LogInformation("New account registered: {UserId} ({Role})", user.Id, user.Role);
 
@@ -128,7 +133,7 @@ public class AuthService : IAuthService
                 $"Too many failed attempts. Try again after {lockoutEnd:HH:mm} UTC.");
 
         if (string.IsNullOrEmpty(user.PasswordHash))
-            throw new UnauthorizedAccessException("This account signs in via Google only.");
+            throw new UnauthorizedAccessException("This account has no password set. Contact the school administrator.");
 
         var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
         if (verifyResult == PasswordVerificationResult.Failed)
@@ -161,75 +166,26 @@ public class AuthService : IAuthService
         return await IssueTokensAsync(user, ipAddress, ct);
     }
 
-    public async Task<AuthResult> LoginWithGoogleAsync(GoogleLoginRequest request, string? ipAddress, CancellationToken ct = default)
-    {
-        GoogleJsonWebSignature.Payload payload;
-        try
-        {
-            var settings = new GoogleJsonWebSignature.ValidationSettings
-            {
-                Audience = string.IsNullOrEmpty(_googleClientId) ? null : new[] { _googleClientId }
-            };
-            payload = await GoogleJsonWebSignature.ValidateAsync(request.IdToken, settings);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Google ID token validation failed");
-            throw new UnauthorizedAccessException("Invalid Google credential.");
-        }
-
-        var user = await _users.FindByGoogleSubjectIdAsync(payload.Subject, ct)
-                   ?? await _users.FindByEmailAsync(payload.Email, ct);
-
-        if (user is null)
-        {
-            user = new User
-            {
-                Email = payload.Email.ToLowerInvariant(),
-                FullName = payload.Name ?? payload.Email,
-                Role = RoleNames.Student, // default; an Admin can elevate the role afterwards
-                IsEmailVerified = payload.EmailVerified,
-                GoogleSubjectId = payload.Subject
-            };
-            await _users.AddAsync(user, ct);
-            await _users.SaveChangesAsync(ct);
-
-            await _publishEndpoint.Publish(new UserRegisteredEvent
-            {
-                UserId = user.Id,
-                Email = user.Email,
-                Role = user.Role
-            }, ct);
-        }
-        else if (user.GoogleSubjectId is null)
-        {
-            // Link the existing password-based account to this Google identity.
-            user.GoogleSubjectId = payload.Subject;
-            await _users.SaveChangesAsync(ct);
-        }
-
-        if (!user.IsActive)
-            throw new UnauthorizedAccessException("This account has been deactivated.");
-
-        await _users.UpdateLastLoginAsync(user.Id, DateTime.UtcNow, ct);
-
-        return await IssueTokensAsync(user, ipAddress, ct);
-    }
-
     public async Task<AuthResult> RefreshAsync(RefreshRequest request, string? ipAddress, CancellationToken ct = default)
     {
-        var principal = _tokenGenerator.ValidateAccessTokenIgnoringExpiry(request.AccessToken)
-            ?? throw new UnauthorizedAccessException("The access token is malformed.");
-
-        var userIdClaim = principal.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
-            ?? throw new UnauthorizedAccessException("The access token is missing its subject claim.");
-
         var tokenHash = _tokenGenerator.HashToken(request.RefreshToken);
         var storedToken = await _refreshTokens.FindByTokenHashAsync(tokenHash, ct)
             ?? throw new UnauthorizedAccessException("The refresh token is unrecognized.");
 
-        if (storedToken.UserId.ToString() != userIdClaim)
-            throw new UnauthorizedAccessException("The refresh token does not match this access token.");
+        if (!string.IsNullOrWhiteSpace(request.AccessToken))
+        {
+            var principal = _tokenGenerator.ValidateAccessTokenIgnoringExpiry(request.AccessToken)
+                ?? throw new UnauthorizedAccessException("The access token is malformed.");
+
+            // JwtSecurityTokenHandler maps the JWT `sub` claim to ClaimTypes.NameIdentifier on
+            // the way in, so look under both names.
+            var userIdClaim = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? principal.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
+                ?? throw new UnauthorizedAccessException("The access token is missing its subject claim.");
+
+            if (storedToken.UserId.ToString() != userIdClaim)
+                throw new UnauthorizedAccessException("The refresh token does not match this access token.");
+        }
 
         if (!storedToken.IsActive)
         {
@@ -282,15 +238,42 @@ public class AuthService : IAuthService
             staffProfile?.ClassTeacherOfSectionId);
     }
 
-    public async Task LogoutAsync(Guid userId, string refreshToken, CancellationToken ct = default)
+    // Possession of the raw refresh token is the proof of ownership here -- no access token
+    // is required, so logging out still revokes the session after a page reload has wiped
+    // the in-memory access token.
+    public async Task LogoutAsync(string refreshToken, CancellationToken ct = default)
     {
         var tokenHash = _tokenGenerator.HashToken(refreshToken);
         var stored = await _refreshTokens.FindByTokenHashAsync(tokenHash, ct);
-        if (stored is not null && stored.UserId == userId)
+        if (stored is not null && stored.RevokedAtUtc is null)
         {
             await _refreshTokens.RevokeAsync(stored.Id, replacedByTokenHash: null, ct);
-            await _cache.RemoveAsync($"refresh-token:{userId}:{tokenHash}", ct);
+            await _cache.RemoveAsync($"refresh-token:{stored.UserId}:{tokenHash}", ct);
         }
+    }
+
+    public async Task<AuthResult> ChangePasswordAsync(Guid userId, ChangePasswordRequest request, string? ipAddress, CancellationToken ct = default)
+    {
+        var user = await _users.FindByIdAsync(userId, ct)
+            ?? throw new UnauthorizedAccessException("The account no longer exists.");
+
+        if (!user.IsActive)
+            throw new UnauthorizedAccessException("This account has been deactivated.");
+
+        if (string.IsNullOrEmpty(user.PasswordHash) ||
+            _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword) == PasswordVerificationResult.Failed)
+            throw new InvalidOperationException("The current password is incorrect.");
+
+        if (request.CurrentPassword == request.NewPassword)
+            throw new InvalidOperationException("The new password must be different from the current one.");
+
+        await _users.SetPasswordHashAsync(user.Id, _passwordHasher.HashPassword(user, request.NewPassword), ct);
+
+        // Sign out every other session, then hand this one a fresh token pair.
+        await _refreshTokens.RevokeAllForUserAsync(user.Id, ct);
+        _logger.LogInformation("AUDIT actor={UserId} action=User.ChangePassword entity=User entityId={UserId}", user.Id, user.Id);
+
+        return await IssueTokensAsync(user, ipAddress, ct);
     }
 
     private async Task<AuthResult> IssueTokensAsync(User user, string? ipAddress, CancellationToken ct)
@@ -333,7 +316,7 @@ public class AuthService : IAuthService
 
     /// <summary>
     /// Mirrors the active refresh token into Redis so the YARP gateway can do a fast
-    /// revocation check without round-tripping to Postgres on every request.
+    /// revocation check without round-tripping to TiDB on every request.
     /// </summary>
     private Task CacheActiveRefreshTokenAsync(Guid userId, string tokenHash, CancellationToken ct) =>
         _cache.SetStringAsync(

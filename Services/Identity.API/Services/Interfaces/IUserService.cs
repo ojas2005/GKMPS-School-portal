@@ -12,4 +12,8 @@ public interface IUserService
     /// <summary>Admin-initiated reset -- overwrites the password hash directly (no knowledge
     /// of the old password required) and revokes every existing session for the account.</summary>
     Task SetPasswordAsync(Guid userId, string newPassword, string actorUserId, string actorRole, CancellationToken ct = default);
+
+    /// <summary>Hard-deletes an account that has never signed in -- used to roll back an
+    /// onboarding whose profile-creation step failed after the login was created.</summary>
+    Task DeleteUnusedAsync(Guid userId, string actorUserId, string actorRole, CancellationToken ct = default);
 }
