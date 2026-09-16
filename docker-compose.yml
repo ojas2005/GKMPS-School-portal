@@ -36,10 +36,19 @@ services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: schoolerp-rabbitmq
+    # RabbitMQ keeps its data under a directory named after the node (rabbit@<hostname>),
+    # so the hostname must stay fixed or a recreated container would ignore the volume.
+    hostname: rabbitmq
     restart: unless-stopped
     environment:
+      # Only applied when the volume is first created: to change the password later,
+      # update it with `rabbitmqctl change_password` (or remove the rabbitmq-data volume).
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-schoolerp}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-devpassword}
+    volumes:
+      # Durable queues and persistent messages survive restarts and redeploys, so events
+      # not yet consumed (e.g. while notification-api is down) are not lost.
+      - rabbitmq-data:/var/lib/rabbitmq
     ports:
       # Host ports are for local debugging only (containers use the compose network) --
       # 5673 on the host because a locally-installed RabbitMQ often owns 127.0.0.1:5672.
@@ -453,5 +462,6 @@ services:
 
 volumes:
   tidb-data:
+  rabbitmq-data:
   caddy-data:
   caddy-config:
