@@ -1,6 +1,25 @@
 name: schoolerp
 
 services:
+  # Local TiDB for development only -- enabled by the `local-db` profile (COMPOSE_PROFILES=local-db
+  # in .env), never in production, where TIDB_* point at TiDB Cloud instead. Data is kept in
+  # the tidb-data volume. Services retry their startup migrations until it is ready.
+  tidb:
+    image: pingcap/tidb:v8.5.1
+    container_name: schoolerp-tidb
+    profiles: ["local-db"]
+    restart: unless-stopped
+    command: ["--store=unistore", "--path=/data/tidb"]
+    volumes:
+      - tidb-data:/data
+    ports:
+      - "127.0.0.1:4000:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:10080/status || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   redis:
     image: redis:7-alpine
     container_name: schoolerp-redis
@@ -79,7 +98,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__IdentityDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=identity;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
+      ConnectionStrings__IdentityDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=identity;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -111,7 +130,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__StudentDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=student;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
+      ConnectionStrings__StudentDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=student;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
       BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-}
@@ -138,7 +157,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__StaffDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=staff;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
+      ConnectionStrings__StaffDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=staff;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -160,7 +179,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__AttendanceDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=attendance;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
+      ConnectionStrings__AttendanceDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=attendance;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -182,7 +201,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__AcademicDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=academic;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
+      ConnectionStrings__AcademicDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=academic;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -206,7 +225,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__ExaminationDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=examination;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
+      ConnectionStrings__ExaminationDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=examination;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
       BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-}
@@ -234,7 +253,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__FeeDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=fee;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
+      ConnectionStrings__FeeDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=fee;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
       ConnectionStrings__Redis: "redis:6379"
       ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
       BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-}
@@ -261,7 +280,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__CommunicationDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=communication;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
+      ConnectionStrings__CommunicationDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=communication;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -283,7 +302,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__LibraryDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=library;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
+      ConnectionStrings__LibraryDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=library;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -305,7 +324,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__TransportDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=transport;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
+      ConnectionStrings__TransportDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=transport;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -330,7 +349,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__NotificationDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=notification;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
+      ConnectionStrings__NotificationDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=notification;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -338,6 +357,13 @@ services:
       RabbitMq__Host: rabbitmq
       RabbitMq__Username: ${RABBITMQ_USER:-schoolerp}
       RabbitMq__Password: ${RABBITMQ_PASSWORD:-devpassword}
+      # Real email delivery (optional). Leave SMTP_HOST empty to log notifications only.
+      Smtp__Host: ${SMTP_HOST:-}
+      Smtp__Port: ${SMTP_PORT:-587}
+      Smtp__Username: ${SMTP_USERNAME:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__From: ${SMTP_FROM:-}
+      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-true}
     ports:
       - "127.0.0.1:5111:8080"
 
@@ -359,7 +385,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Seq__Url: "http://seq:5341"
-      ConnectionStrings__ReportingDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=reporting;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=VerifyFull;"
+      ConnectionStrings__ReportingDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=reporting;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
       ConnectionStrings__Redis: "redis:6379"
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
       Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
@@ -426,5 +452,6 @@ services:
       - caddy-config:/config
 
 volumes:
+  tidb-data:
   caddy-data:
   caddy-config:
