@@ -6,19 +6,18 @@ README only for infrastructure/deployment questions.
 
 ## 1. How the frontend should talk to the backend
 
-**Always call the gateway, never a service directly.** The gateway is the only place
-CORS, JWT validation, and rate limiting are enforced for browser traffic.
+The backend is a single app; every endpoint below lives under the same base URL. CORS,
+JWT validation and rate limiting are all enforced there.
 
 | Environment | Base URL |
 |---|---|
 | Local (`docker compose up`) | `http://localhost:5100` (`ng serve` proxies `/api` to it) |
 | Everywhere else | set `apiBaseUrl` in the frontend's `public/config.json` (empty = same origin) |
 
-CORS on the gateway currently allows exactly one origin, read from `Cors:AllowedOrigins`
-in `Gateway/SchoolERP.Gateway/appsettings.json` (default `http://localhost:4200`, i.e.
-`ng serve`'s default port). If your Angular dev server runs on a different port, either
-change that setting or set `FRONTEND_URL` in `.env` before `docker compose up` — see
-`docker-compose.yml`'s `gateway` service. **A frontend on an unlisted origin will get
+CORS allows the origins in `Cors:AllowedOrigins` (`src/SchoolERP.Api/appsettings.json`,
+default `http://localhost:4200`, i.e. `ng serve`'s default port). To allow another origin,
+set `FRONTEND_URL` in `.env` before `docker compose up` (see `docker-compose.yml`'s `app`
+service). **A frontend on an unlisted origin will get
 its requests blocked by the browser**, not by an API error — if calls silently fail
 with no response body, check this first.
 
@@ -90,7 +89,7 @@ uses PascalCase — the table above already reflects the wire format.
 Role lists shown are the *additional* restriction on top of being logged in; no list
 means any authenticated user can call it.
 
-### Identity.API
+### Identity
 
 | Method & path | Roles | Notes |
 |---|---|---|
@@ -105,7 +104,7 @@ means any authenticated user can call it.
 | `PATCH /api/users/{id}/password` | SuperAdmin, Principal, Admin | lower-ranked accounts only |
 | `DELETE /api/users/{id}` | SuperAdmin, Principal, Admin | never-used accounts only (onboarding rollback) |
 
-### Student.API
+### Student
 
 | Method & path | Roles | Notes |
 |---|---|---|
@@ -114,13 +113,13 @@ means any authenticated user can call it.
 | `GET /api/students?classId=&sectionId=&keyword=&page=&pageSize=` | SuperAdmin, Principal, Admin, Teacher, Accountant, Librarian | teachers are scoped to the class they head |
 | `PATCH /api/students/{id}/class` | SuperAdmin, Principal, Admin | body `{classId, sectionId}` |
 | `PATCH /api/students/{id}/parent-account` | SuperAdmin, Principal, Admin | body `{parentUserId}` (null unlinks); the Parent login then gets this student's claims |
-| `GET /api/students/stats/active-by-class` | SuperAdmin, Principal, Admin, Teacher | Redis-cached 5 min |
+| `GET /api/students/stats/active-by-class` | SuperAdmin, Principal, Admin, Teacher, Accountant | cached 5 min |
 | `POST /api/transfer-certificates/students/{studentId}/request` | SuperAdmin, Principal, Admin, Teacher | body `{reason, requestedLeavingDateUtc}` |
 | `POST /api/transfer-certificates/{id}/approve` | SuperAdmin, Principal | |
 | `GET /api/transfer-certificates/{id}/download` | — | returns `{downloadUrl, expiresInMinutes}` — a 15-min SAS URL; students/parents only their own |
 | `GET /api/transfer-certificates/verify/{code}` `[public]` | — | |
 
-### Staff.API
+### Staff
 
 | Method & path | Roles | Notes |
 |---|---|---|
@@ -130,7 +129,7 @@ means any authenticated user can call it.
 | `POST /api/staff/{staffId}/leave-requests` | — | yourself only (admins for anyone); body `{leaveType, fromDateUtc, toDateUtc, reason}` |
 | `POST /api/staff/{staffId}/leave-requests/{leaveRequestId}/decision` | SuperAdmin, Principal, Admin | body `{approve, note}` |
 
-### Attendance.API
+### Attendance
 
 | Method & path | Roles | Notes |
 |---|---|---|
@@ -138,18 +137,18 @@ means any authenticated user can call it.
 | `GET /api/attendance/class?classId=&sectionId=&date=` | — | |
 | `GET /api/attendance/students/{studentId}/percentage?from=&to=` | — | |
 
-### Academic.API
+### Academic
 
 | Method & path | Roles | Notes |
 |---|---|---|
 | `POST /api/subjects` | SuperAdmin, Principal, Admin | |
 | `GET /api/subjects?classId=` | — | classId optional for staff; students/parents only their own class |
 | `PUT /api/timetables` | SuperAdmin, Principal, Admin | body `{classId, sectionId, slots: [...]}` |
-| `GET /api/timetables?classId=&sectionId=` | — | Redis-cached 5 min |
+| `GET /api/timetables?classId=&sectionId=` | — | cached 5 min |
 | `POST /api/homework` | SuperAdmin, Principal, Admin, Teacher | |
 | `GET /api/homework?classId=&sectionId=` | — | |
 
-### Examination.API
+### Examination
 
 | Method & path | Roles | Notes |
 |---|---|---|
@@ -161,7 +160,7 @@ means any authenticated user can call it.
 | `POST /api/exams/{examId}/marks` | SuperAdmin, Principal, Admin, Teacher | |
 | `PATCH /api/exams/{examId}/marks/{marksEntryId}` | SuperAdmin, Principal, Admin, Teacher | correction |
 
-### Fee.API
+### Fee
 
 | Method & path | Roles | Notes |
 |---|---|---|
@@ -173,7 +172,7 @@ means any authenticated user can call it.
 | `POST /api/fee-payments/{feePaymentId}/waivers/approve` | SuperAdmin, Principal | |
 | `GET /api/fee-payments/collection-totals?fromUtc=&toUtc=` | SuperAdmin, Principal, Admin, Accountant | |
 
-### Communication.API
+### Communication
 
 | Method & path | Roles | Notes |
 |---|---|---|
@@ -183,7 +182,7 @@ means any authenticated user can call it.
 | `GET /api/parent-messages/students/{studentId}` | same | thread; non-admins see only messages they sent or received |
 | `POST /api/parent-messages/{messageId}/read` | — | recipient only |
 
-### Library.API
+### Library
 
 | Method & path | Roles | Notes |
 |---|---|---|
@@ -193,7 +192,7 @@ means any authenticated user can call it.
 | `POST /api/book-issues` | SuperAdmin, Principal, Admin, Librarian | body `{bookId, studentId, dueDateUtc}` |
 | `POST /api/book-issues/return` | SuperAdmin, Principal, Admin, Librarian | body `{issueId}` |
 
-### Transport.API
+### Transport
 
 | Method & path | Roles | Notes |
 |---|---|---|
@@ -202,13 +201,13 @@ means any authenticated user can call it.
 | `POST /api/vehicles` | SuperAdmin, Principal, Admin | |
 | `POST /api/student-route-mappings` | SuperAdmin, Principal, Admin | |
 
-### Notification.API
+### Notification
 
 | Method & path | Roles | Notes |
 |---|---|---|
 | `GET /api/notifications?recipientReference=&page=&pageSize=` | SuperAdmin, Principal, Admin | delivery history, not a send endpoint |
 
-### Reporting.API
+### Reporting
 
 | Method & path | Roles | Notes |
 |---|---|---|
@@ -231,21 +230,16 @@ means any authenticated user can call it.
 
 ## 6. Current backend limitations to design around
 
-- Only **Identity.API and Student.API** (plus Fee.API) have been confirmed to compile
-  in this environment; the other 9 services are believed-correct but unverified by a
-  real build — see the backend README's "A note on verification". If something 500s
-  unexpectedly, it might be a backend compile issue, not a frontend bug.
-- No test data / seed script exists yet. Start every flow from `POST /api/auth/register`.
-- `Notification.API` sends real email only when an SMTP relay is configured (`SMTP_*`
+- No test data / seed script exists. Sign in as the seeded owner and create accounts from there.
+- Notifications send real email only when an SMTP relay is configured (`SMTP_*`
   in `.env`); SMS and push have no provider yet. Don't build UI that assumes a user
   actually received something.
-- CORS was just added and is unverified against a real browser — if you hit a CORS
-  error immediately, double check `Cors:AllowedOrigins` matches your dev server's exact
+- If you hit a CORS error, check that `Cors:AllowedOrigins` matches your dev server's exact
   origin (scheme + host + port).
 
 ## 7. Suggested Angular project shape
 
-One feature module per backend service keeps the mapping obvious: `auth/`, `students/`,
+One feature module per backend module keeps the mapping obvious: `auth/`, `students/`,
 `staff/`, `attendance/`, `academic/`, `examinations/`, `fees/`, `communication/`,
 `library/`, `transport/`, `notifications/`, `reports/`, plus a `core/` module for the
 HTTP interceptor (attach token, handle 401 refresh), the `ApiResponse<T>` wrapper types,
