@@ -28,6 +28,7 @@ services:
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
       # First-boot seed only (ignored once the owner account exists). If unset, a random
       # password is generated and printed once in this container's logs.
+      Owner__Username: ${OWNER_USERNAME:-ownerishim}
       Owner__Password: ${OWNER_PASSWORD:-}
       Cors__AllowedOrigins__0: ${FRONTEND_URL:-http://localhost:4200}
       Seq__Url: ${SEQ_URL:-}
