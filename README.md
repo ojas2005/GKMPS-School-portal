@@ -128,6 +128,26 @@ from **My account**. There's no public sign-up — the owner creates further acc
 - Rate limits are per signed-in user (or client IP when anonymous). The app trusts
   `X-Forwarded-For` from the proxy in front of it, so don't expose port 8080 directly.
 
+### Current production (Azure)
+
+| Piece | Where |
+|---|---|
+| Backend | Azure Container Apps `gkmps-api` (resource group `gkmps-prod`, Korea Central; 0.25 vCPU / 0.5 GB, scales to zero) |
+| Image registry | Azure Container Registry `gkmpsregistry6333` |
+| Frontend | Azure Static Web Apps `gkmps-portal` (Free, East Asia) |
+| Database | TiDB Cloud Starter (AWS Tokyo) |
+| Files | Azure Blob Storage `blobschool` |
+
+Secrets (database, blob storage, JWT key, owner seed password) are Container Apps secrets, not
+image or repo contents. The subscription blocks ACR Tasks, so images are built locally —
+the Dockerfile cross-compiles, so this works from Apple Silicon too:
+
+```bash
+az acr login -n gkmpsregistry6333
+docker buildx build --platform linux/amd64 -t gkmpsregistry6333.azurecr.io/schoolerp-app:<tag> --push .
+az containerapp update -g gkmps-prod -n gkmps-api --image gkmpsregistry6333.azurecr.io/schoolerp-app:<tag>
+```
+
 ## Architecture
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the system diagram, events and cross-module
