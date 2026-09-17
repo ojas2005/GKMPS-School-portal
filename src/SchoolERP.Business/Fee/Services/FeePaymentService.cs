@@ -166,6 +166,13 @@ public class FeePaymentService : IFeePaymentService
         return transaction;
     }
 
+    /// <summary>Everything a student still owes across all their dues (never negative).</summary>
+    private async Task<decimal> GetTotalPendingForStudentAsync(Guid studentId, CancellationToken ct)
+    {
+        var dues = await _payments.FindByStudentAsync(studentId, ct);
+        return FeeMath.TotalPending(dues);
+    }
+
     public async Task<string> GetReceiptDownloadUrlAsync(Guid paymentTransactionId, Guid? requiredStudentId = null, CancellationToken ct = default)
     {
         var transaction = await _transactions.FindByIdAsync(paymentTransactionId, ct)
@@ -180,7 +187,10 @@ public class FeePaymentService : IFeePaymentService
         if (string.IsNullOrEmpty(transaction.ReceiptBlobPath))
         {
 
-            var pendingAmount = Math.Max(0, payment.TotalAmount - payment.PaidAmount - payment.WaiverAmount);
+            // Everything this student still owes, not just the one due this payment went
+            // against -- otherwise clearing a single fee prints "Pending Fee: 0" on the
+            // receipt while other dues are still outstanding.
+            var pendingAmount = await GetTotalPendingForStudentAsync(payment.StudentId, ct);
             var document = new ReceiptDocument(transaction.ReceiptNumber, transaction.Amount, transaction.PaymentMethod, transaction.PaidAtUtc, payment.StudentId, _schoolName, pendingAmount);
             var pdfBytes = document.GeneratePdf();
 
@@ -293,7 +303,7 @@ public class FeePaymentService : IFeePaymentService
                 var totalDue = g.Sum(p => p.TotalAmount);
                 var totalPaid = g.Sum(p => p.PaidAmount);
                 var totalWaiver = g.Sum(p => p.WaiverAmount);
-                var pending = Math.Max(0, totalDue - totalPaid - totalWaiver);
+                var pending = FeeMath.Pending(totalDue, totalPaid, totalWaiver);
                 return new StudentPendingSummary(g.Key, totalDue, totalPaid, totalWaiver, pending);
             })
             .OrderByDescending(s => s.Pending)

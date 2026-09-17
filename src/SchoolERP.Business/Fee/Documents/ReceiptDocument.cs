@@ -12,6 +12,7 @@ public class ReceiptDocument : IDocument
     private readonly DateTime _paidAtUtc;
     private readonly Guid _studentId;
     private readonly string _schoolName;
+    // Everything the student still owes when the receipt is produced, across every due.
     private readonly decimal _pendingAmount;
 
     public ReceiptDocument(string receiptNumber, decimal amount, string paymentMethod, DateTime paidAtUtc, Guid studentId, string schoolName, decimal pendingAmount)
@@ -50,7 +51,7 @@ public class ReceiptDocument : IDocument
                 col.Item().Text($"Amount Paid: {_amount:0.##}");
                 col.Item().Text($"Payment Method: {_paymentMethod}");
                 col.Item().Text($"Paid On: {_paidAtUtc:d MMMM yyyy HH:mm} UTC");
-                col.Item().Text($"Pending Fee: {_pendingAmount:0.##}").SemiBold();
+                col.Item().Text($"Total Pending: {_pendingAmount:0.##}").SemiBold();
             });
 
             page.Footer().AlignCenter().Text(x =>
