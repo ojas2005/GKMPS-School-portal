@@ -1,0 +1,132 @@
+using System.Text;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
+using Serilog;
+using SchoolERP.Api.Startup;
+using SchoolERP.Business;
+using SchoolERP.Common.ExceptionHandling;
+using SchoolERP.Common.Hosting;
+using SchoolERP.Common.Logging;
+using SchoolERP.Common.Security;
+using SchoolERP.DataAccess.Identity;
+
+// GKMPS School ERP -- single deployable, n-tier:
+//   SchoolERP.Api (presentation) -> SchoolERP.Business (services) -> SchoolERP.DataAccess (EF Core,
+//   repositories, storage), with SchoolERP.Common shared by all tiers.
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog(SharedLogging.Configure("SchoolERP.Api"));
+
+// ---------- Business + data access tiers ----------
+builder.Services.AddBusiness(builder.Configuration);
+
+// ---------- Authentication: JWT bearer ----------
+var jwtSection = builder.Configuration.GetSection("Jwt");
+var signingKey = jwtSection["SigningKey"];
+if (string.IsNullOrWhiteSpace(signingKey) || signingKey.Length < 32 || signingKey.StartsWith("CHANGE_ME"))
+    throw new InvalidOperationException("Jwt:SigningKey must be set to a random value of at least 32 characters.");
+
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtSection["Issuer"],
+            ValidateAudience = true,
+            ValidAudience = jwtSection["Audience"],
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30)
+        };
+    });
+builder.Services.AddAuthorization();
+
+// ---------- CORS: only the frontend origin(s) may call the API from a browser ----------
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:4200" };
+builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
+    policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
+
+// ---------- Rate limiting: per signed-in user, or per client IP when anonymous ----------
+builder.Services.AddSharedForwardedHeaders();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Login/refresh/register: brute-force protection while still letting the owner batch-create accounts.
+    options.AddPolicy("auth", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: SharedHosting.ClientPartitionKey(httpContext),
+        factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: SharedHosting.ClientPartitionKey(httpContext),
+            factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 300, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
+
+// ---------- Controllers + Swagger ----------
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new() { Title = "GKMPS School ERP API", Version = "v1" });
+    // Several modules have DTOs with the same short name; use full names as schema ids.
+    c.CustomSchemaIds(type => type.FullName!.Replace('+', '.'));
+    c.AddSecurityDefinition("Bearer", new()
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header
+    });
+});
+
+// ---------- Health checks ----------
+// Every module's database lives on the same server, so one check covers reachability.
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<IdentityDbContext>("database", tags: new[] { "ready" });
+
+builder.Services.AddSharedExceptionHandling();
+
+var app = builder.Build();
+
+// First in the pipeline so everything after it sees the real client IP behind the proxy.
+app.UseForwardedHeaders();
+app.UseExceptionHandler();
+app.UseSecurityHeaders();
+
+if (app.IsSwaggerEnabled())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "GKMPS School ERP API v1");
+        c.RoutePrefix = "swagger";
+    });
+}
+
+app.UseSerilogRequestLogging();
+app.UseCors("Frontend");
+// Authentication runs before the rate limiter so requests are bucketed per signed-in user.
+app.UseAuthentication();
+app.UseRateLimiter();
+app.UseAuthorization();
+
+app.MapControllers();
+
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+
+DatabaseInitializer.Initialize(app);
+
+app.Run();

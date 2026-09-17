@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Data access tier: entities, one EF Core DbContext + migrations per module (each on
+       its own database of the same TiDB/MySQL server), repositories, and Blob Storage. -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>SchoolERP.DataAccess</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="9.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.22.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../SchoolERP.Common/SchoolERP.Common.csproj" />
+  </ItemGroup>
+
+  <!-- Same implicit usings the Web SDK gave these files when they lived in the API projects. -->
+  <ItemGroup>
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Hosting" />
+    <Using Include="Microsoft.Extensions.Logging" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="System.Net.Http.Json" />
+  </ItemGroup>
+
+</Project>
