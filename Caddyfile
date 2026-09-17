@@ -1,4 +1,4 @@
-# Reverse proxy + automatic TLS termination in front of the gateway.
+# Reverse proxy + automatic TLS termination in front of the app.
 #
 # {$DOMAIN:localhost} reads the DOMAIN env var (see .env.example); with no real domain
 # set, it falls back to `localhost` and Caddy issues itself a local/internal cert (no
@@ -10,12 +10,12 @@
 {$DOMAIN:localhost} {
 	# Everything is API traffic in this deployment -- the Angular frontend (separate
 	# repo) is built and hosted separately, so this proxy's only job is terminating
-	# TLS for the gateway.
-	reverse_proxy gateway:8080
+	# TLS for the app.
+	reverse_proxy app:8080
 
 	encode gzip
 
-	# HSTS belongs here, not in the gateway itself: Caddy is the only layer that
+	# HSTS belongs here, not in the app itself: Caddy is the only layer that
 	# actually terminates TLS, so it's the only layer that can honestly promise "this
 	# host is HTTPS-only" to the browser. Skipped for the localhost/self-signed
 	# fallback so a local dev cert warning doesn't turn into a hard HSTS lockout.
