@@ -4,7 +4,7 @@ name: Backend CI
 # of during `docker compose up --build` on someone's machine (or worse, in production).
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
     branches: [main]
 
@@ -30,13 +30,41 @@ jobs:
       - name: Test
         run: dotnet test SchoolERP.sln --no-build --configuration Release
 
-  # Building the Docker image is a stronger signal than `dotnet build` alone -- it catches
-  # Dockerfile drift (a missing COPY, a stale base image tag) that a plain SDK build can't see.
-  docker-build:
+  # Builds the production image and, on pushes, publishes it to GitHub Container Registry
+  # (ghcr.io) -- free for a public repository, unlike a paid Azure registry. Every pushed
+  # commit gets an image tagged with its SHA; main also moves "latest". Pull requests only
+  # build it, which still catches Dockerfile drift a plain `dotnet build` can't see.
+  image:
     runs-on: ubuntu-latest
     needs: build-and-test
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/schoolerp-app
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build app image
-        run: docker build -f Dockerfile -t schoolerp-app:ci .
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and push on pushes)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ github.ref == 'refs/heads/main' && format('{0}:latest', env.IMAGE) || '' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -9,7 +9,7 @@
 
 ![.NET](https://img.shields.io/badge/.NET-9.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)
 ![TiDB](https://img.shields.io/badge/TiDB-MySQL_compatible-DD0031?style=for-the-badge&logo=mysql&logoColor=white)
-![Azure](https://img.shields.io/badge/Azure-Blob_Storage-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white)
+![Azure](https://img.shields.io/badge/Azure-Container_Apps-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white)
 ![CI](https://img.shields.io/github/actions/workflow/status/ojas2005/GKMPS-School-portal/backend-ci.yml?style=for-the-badge&label=CI&logo=githubactions&logoColor=white)
 ![License](https://img.shields.io/badge/license-Unlicensed-lightgrey?style=for-the-badge)
 
@@ -37,7 +37,7 @@ of this size (~1,300 accounts, a few hundred daily users).
 |---|---|---|
 | `src/SchoolERP.Api` | Presentation | Controllers, JWT auth, CORS, rate limiting, Swagger, health checks, startup (migrations + owner seed) |
 | `src/SchoolERP.Business` | Business | Services and their interfaces, DTOs, token issuing, QuestPDF documents, notification event handlers, in-process event bus |
-| `src/SchoolERP.DataAccess` | Data access | Entities, one EF Core `DbContext` + migrations per module, repositories, Azure Blob Storage |
+| `src/SchoolERP.DataAccess` | Data access | Entities, one EF Core `DbContext` + migrations per module, repositories, file storage for generated PDFs |
 | `src/SchoolERP.Common` | Cross-cutting | `ApiResponse`, `RoleNames`, `CallerClaims`, `BaseEntity`/`AuditLog`, event contracts, exception handling, logging, security headers, hosting helpers |
 
 References only point downward: **Api → Business → DataAccess → Common**.
@@ -72,8 +72,9 @@ Student and Fee services), never each other's tables.
 - **Events** — in-process event bus with a background dispatcher (no message broker needed)
 - **Auth** — PBKDF2 password hashing, 15-min JWTs, rotated 7-day refresh tokens (hashed at
   rest), account lockout, role hierarchy for account management
-- **Files** — QuestPDF receipts, report cards and certificates in Azure Blob Storage,
-  shared via 15-minute SAS links
+- **Files** — QuestPDF receipts, report cards and certificates, stored in their own `files`
+  database and shared via signed 15-minute links served by the API
+  (`FileStorage__Provider=AzureBlob` switches to Azure Blob Storage + SAS links instead)
 - **Ops** — Serilog (console + optional Seq), health checks, per-user rate limiting,
   Swagger (off in production unless enabled), Docker, Caddy (automatic TLS), GitHub Actions CI
 
@@ -88,7 +89,8 @@ cp .env.example .env
 #   Database: TIDB_* for TiDB Cloud, or uncomment the local block
 #             (COMPOSE_PROFILES=local-db,local-storage, TIDB_HOST=tidb, TIDB_SSL_MODE=None, ...)
 
-# build & run the app, Caddy, and (with the local profiles) a TiDB container + Azurite
+# build & run the app, Caddy, and (with the local profiles) a TiDB container (+ Azurite, only
+# needed with FILE_STORAGE_PROVIDER=AzureBlob)
 docker compose up --build
 ```
 
@@ -118,7 +120,7 @@ from **My account**. There's no public sign-up — the owner creates further acc
 
 - The whole backend is one container image (`Dockerfile` at the repo root) listening on
   port 8080. It needs `ConnectionStrings__SchoolDb` (the TiDB server, without a database
-  name), `ConnectionStrings__BlobStorage`, `Jwt__SigningKey` and `Cors__AllowedOrigins__0`
+  name), `Jwt__SigningKey` and `Cors__AllowedOrigins__0`
   (the frontend origin); see `docker-compose.yml` for the full list.
 - With Docker Compose on a server: `docker compose --env-file .env.production up -d --build`
   with its own secrets, **without** the local profiles. Set `DOMAIN` so Caddy obtains a real
@@ -130,22 +132,22 @@ from **My account**. There's no public sign-up — the owner creates further acc
 
 ### Current production (Azure)
 
+Set up to run at no cost: every piece is on a free tier or inside a free monthly allowance.
+
 | Piece | Where |
 |---|---|
-| Backend | Azure Container Apps `gkmps-api` (resource group `gkmps-prod`, Korea Central; 0.25 vCPU / 0.5 GB, scales to zero) |
-| Image registry | Azure Container Registry `gkmpsregistry6333` |
+| Backend | Azure Container Apps `gkmps-api` (resource group `gkmps-prod`, Korea Central; 0.25 vCPU / 0.5 GB; scales to zero when idle, so usage stays inside the monthly free grant — the first request after a quiet spell takes ~20 s while it starts, and the login page waits it out) |
+| Image registry | GitHub Container Registry, `ghcr.io/ojas2005/schoolerp-app` (free for a public repo) — CI publishes one image per pushed commit, tagged with its SHA |
 | Frontend | Azure Static Web Apps `gkmps-portal` (Free, East Asia) |
-| Database | TiDB Cloud Starter (AWS Tokyo) |
-| Files | Azure Blob Storage `blobschool` |
+| Database | TiDB Cloud Starter (AWS Tokyo), free tier |
+| Files | The `files` database on the same TiDB server |
+| Logs | Container console output only — the environment doesn't ship logs to a paid Log Analytics workspace |
 
-Secrets (database, blob storage, JWT key, owner seed password) are Container Apps secrets, not
-image or repo contents. The subscription blocks ACR Tasks, so images are built locally —
-the Dockerfile cross-compiles, so this works from Apple Silicon too:
+Secrets (database, JWT key, owner seed password) are Container Apps secrets, not image or repo
+contents. To deploy a commit, push it, wait for the **Backend CI** run to publish its image, then:
 
 ```bash
-az acr login -n gkmpsregistry6333
-docker buildx build --platform linux/amd64 -t gkmpsregistry6333.azurecr.io/schoolerp-app:<tag> --push .
-az containerapp update -g gkmps-prod -n gkmps-api --image gkmpsregistry6333.azurecr.io/schoolerp-app:<tag>
+az containerapp update -g gkmps-prod -n gkmps-api --image ghcr.io/ojas2005/schoolerp-app:<commit-sha>
 ```
 
 ## Architecture
@@ -177,7 +179,7 @@ src/
     <Module>/Entities/
     <Module>/Repositories/        # + Interfaces/
     <Module>/Migrations/
-    Storage/                      # Azure Blob Storage
+    Storage/                      # generated PDFs: database store (default) or Azure Blob
   SchoolERP.Common/               # cross-cutting
 Tests/
   SchoolERP.Tests/                # xUnit

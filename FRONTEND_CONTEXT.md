@@ -116,7 +116,7 @@ means any authenticated user can call it.
 | `GET /api/students/stats/active-by-class` | SuperAdmin, Principal, Admin, Teacher, Accountant | cached 5 min |
 | `POST /api/transfer-certificates/students/{studentId}/request` | SuperAdmin, Principal, Admin, Teacher | body `{reason, requestedLeavingDateUtc}` |
 | `POST /api/transfer-certificates/{id}/approve` | SuperAdmin, Principal | |
-| `GET /api/transfer-certificates/{id}/download` | — | returns `{downloadUrl, expiresInMinutes}` — a 15-min SAS URL; students/parents only their own |
+| `GET /api/transfer-certificates/{id}/download` | — | returns `{downloadUrl, expiresInMinutes}` — a 15-min signed link; students/parents only their own |
 | `GET /api/transfer-certificates/verify/{code}` `[public]` | — | |
 
 ### Staff
@@ -156,7 +156,7 @@ means any authenticated user can call it.
 | `GET /api/exams?classId=` | — | classId optional for staff; students/parents only their own class |
 | `POST /api/exams/{examId}/publish` | SuperAdmin, Principal | two-step: publishes results |
 | `GET /api/exams/{examId}/stats` | SuperAdmin, Principal, Admin, Teacher | average + rankings |
-| `GET /api/exams/{examId}/students/{studentId}/report-card` | — | returns SAS URL; requires results published |
+| `GET /api/exams/{examId}/students/{studentId}/report-card` | — | returns a signed link; requires results published |
 | `POST /api/exams/{examId}/marks` | SuperAdmin, Principal, Admin, Teacher | |
 | `PATCH /api/exams/{examId}/marks/{marksEntryId}` | SuperAdmin, Principal, Admin, Teacher | correction |
 
@@ -167,7 +167,7 @@ means any authenticated user can call it.
 | `POST /api/fee-structures` | SuperAdmin, Principal, Admin, Accountant | |
 | `GET /api/fee-structures?classId=&academicYear=` | — | both optional for staff; students/parents only their own class |
 | `POST /api/fee-payments` | SuperAdmin, Principal, Admin, Accountant | body `{studentId, feeStructureId, amount, paymentMethod, gatewayReference}` |
-| `GET /api/fee-payments/transactions/{transactionId}/receipt` | — | returns SAS URL; students/parents only their own |
+| `GET /api/fee-payments/transactions/{transactionId}/receipt` | — | returns a signed link; students/parents only their own |
 | `POST /api/fee-payments/waivers/request` | SuperAdmin, Principal, Admin, Accountant | |
 | `POST /api/fee-payments/{feePaymentId}/waivers/approve` | SuperAdmin, Principal | |
 | `GET /api/fee-payments/collection-totals?fromUtc=&toUtc=` | SuperAdmin, Principal, Admin, Accountant | |
@@ -221,8 +221,10 @@ means any authenticated user can call it.
   as ISO 8601 strings (`"2026-07-02T00:00:00"`, `"2026-07-02"`, `"14:30:00"`
   respectively). Send the same format back.
 - **File downloads**: certificates/receipts/report cards never return a file directly —
-  they return `{ downloadUrl, expiresInMinutes: 15 }`. Fetch that URL separately (it
-  points at Blob Storage, not the API) and it expires, so don't cache it.
+  they return `{ downloadUrl, expiresInMinutes: 15 }`. Open that URL separately (no auth
+  header needed — the link itself is signed) and it expires, so don't cache it. With the
+  default database file store it's relative (`/api/files/...`), so prefix the API base URL;
+  with Azure Blob it's an absolute SAS URL. `openDownload()` in `runtime-config.ts` handles both.
 - **Guids**: every ID is a GUID string (`"3fa85f64-5717-4562-b3fc-2c963f66afa6"`), not a
   number.
 - **CORS is origin-based, not endpoint-based** — if you add a new frontend

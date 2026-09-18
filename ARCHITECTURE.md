@@ -1,6 +1,6 @@
 # GKMPS School ERP — Architecture Diagrams
 
-HLD · LLD · per-module ER · one ASP.NET Core 9 app in 4 tiers (Api → Business → DataAccess, + Common) · TiDB · Azure Blob Storage · Caddy
+HLD · LLD · per-module ER · one ASP.NET Core 9 app in 4 tiers (Api → Business → DataAccess, + Common) · TiDB · Caddy
 
 > Diagrams are Mermaid source, rendered natively by GitHub — no external tools needed to view them.
 
@@ -21,7 +21,7 @@ HLD · LLD · per-module ER · one ASP.NET Core 9 app in 4 tiers (Api → Busine
 
 ## 1. System architecture
 
-A single deployable ASP.NET Core app (`SchoolERP.Api`) behind Caddy. It is organised into tiers, and within each tier into the 12 school modules (Identity, Student, Staff, Attendance, Academic, Examination, Fee, Communication, Library, Transport, Notification, Reporting). Each module keeps its **own database** on one TiDB (MySQL-protocol) server. Receipts, report cards and transfer certificates are PDFs in Azure Blob Storage, handed out as short-lived SAS links.
+A single deployable ASP.NET Core app (`SchoolERP.Api`) behind Caddy. It is organised into tiers, and within each tier into the 12 school modules (Identity, Student, Staff, Attendance, Academic, Examination, Fee, Communication, Library, Transport, Notification, Reporting). Each module keeps its **own database** on one TiDB (MySQL-protocol) server. Receipts, report cards and transfer certificates are PDFs kept in their own `files` database, handed out as short-lived signed links that the API serves itself (Azure Blob Storage with SAS links remains an opt-in alternative).
 
 ```mermaid
 flowchart TB
@@ -31,16 +31,16 @@ flowchart TB
     direction TB
     API["Presentation tier<br/>controllers · JWT · CORS · rate limiting · health"]:::tier
     BIZ["Business tier<br/>services · DTOs · token issuing · PDFs · event handlers"]:::tier
-    DAL["Data access tier<br/>12 DbContexts + migrations · repositories · blob storage"]:::tier
+    DAL["Data access tier<br/>12 DbContexts + migrations · repositories · file store"]:::tier
     API --> BIZ --> DAL
   end
   DB[("TiDB server<br/>identity · student · staff · attendance · academic · examination<br/>fee · communication · library · transport · notification · reporting")]:::infra
-  BLOB[("Azure Blob Storage<br/>SAS-signed PDFs")]:::infra
+  BLOB[("files database<br/>signed PDF links")]:::infra
   SMTP(["SMTP relay (optional)<br/>account / admission emails"]):::infra
 
   SPA -->|"HTTPS /api/*"| CAD --> API
   DAL --> DB
-  DAL -. upload / SAS URL .-> BLOB
+  DAL -. store / signed link .-> BLOB
   BIZ -. email .-> SMTP
 
   classDef client fill:#ede9fe,stroke:#7c3aed,color:#4c1d95;
@@ -72,7 +72,7 @@ flowchart LR
   class REG,ADM,PAY,CERT,NH,RPT,ST2,FE2,TRN,LOGIN,PROF e;
 ```
 
-Events are raised **after** the change is saved, and handlers run on a background worker in their own DI scope, so a slow email never delays the request. Queued events live in memory: one raised in the instant before the process stops is lost, which is acceptable because events only drive notifications (every attempt is also recorded in `NotificationLogs`). `CertificateGeneratedEvent` carries a verification code, never a SAS URL.
+Events are raised **after** the change is saved, and handlers run on a background worker in their own DI scope, so a slow email never delays the request. Queued events live in memory: one raised in the instant before the process stops is lost, which is acceptable because events only drive notifications (every attempt is also recorded in `NotificationLogs`). `CertificateGeneratedEvent` carries a verification code, never a download link.
 
 ## 3. N-tier layering
 
@@ -91,7 +91,7 @@ flowchart TB
     RI["{Module}/Repositories/Interfaces"] --> R["{Module}/Repositories (EF Core)"]
     CTX["{Module}/{Module}DbContext + Migrations"]
     EN["{Module}/Entities"]
-    ST["Storage (Azure Blob)"]
+    ST["Storage (files database)"]
   end
   CM["SchoolERP.Common — ApiResponse · RoleNames · CallerClaims · BaseEntity/AuditLog · event contracts · exception handling · logging · security headers · hosting"]
 
