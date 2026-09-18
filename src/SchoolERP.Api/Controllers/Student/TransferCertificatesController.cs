@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SchoolERP.Common;
@@ -58,6 +59,7 @@ public class TransferCertificatesController : ControllerBase
     }
 
     [HttpGet("{id:guid}/download")]
+    [EnableRateLimiting("documents")]
     [Authorize]
     public async Task<IActionResult> Download(Guid id, CancellationToken ct)
     {

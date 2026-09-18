@@ -87,10 +87,26 @@ builder.Services.AddRateLimiter(options =>
         partitionKey: SharedHosting.ClientPartitionKey(httpContext),
         factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 
-    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: SharedHosting.ClientPartitionKey(httpContext),
-            factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 300, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    // PDFs cost far more than ordinary requests (generation, storage, database units), so
+    // downloading them has its own, much tighter allowance.
+    options.AddPolicy("documents", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: SharedHosting.ClientPartitionKey(httpContext),
+        factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+
+    // Everything else: a per-minute limit for bursts, and a daily cap. The database runs on a
+    // free monthly allowance that stops the whole site when exhausted, so no single account
+    // (even a legitimate one that's been compromised) may consume more than a sliver of it.
+    // A busy staff member -- marking a whole school's attendance and browsing all day -- stays
+    // well under both.
+    options.GlobalLimiter = PartitionedRateLimiter.CreateChained(
+        PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: SharedHosting.ClientPartitionKey(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 180, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 })),
+        PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: SharedHosting.ClientPartitionKey(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 5_000, Window = TimeSpan.FromDays(1), QueueLimit = 0 })));
 });
 
 // ---------- Controllers + Swagger ----------

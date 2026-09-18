@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SchoolERP.Business.Examination.DTOs;
@@ -80,6 +81,7 @@ public class ExamsController : ControllerBase
     }
 
     [HttpGet("{examId:guid}/students/{studentId:guid}/report-card")]
+    [EnableRateLimiting("documents")]
     public async Task<IActionResult> GetReportCard(Guid examId, Guid studentId, CancellationToken ct)
     {
         // Students/parents may only read their OWN report card.

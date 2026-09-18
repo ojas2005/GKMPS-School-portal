@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SchoolERP.Business.Reporting.Services.Interfaces;
@@ -24,6 +25,7 @@ public class ReportsController : ControllerBase
     }
 
     [HttpGet("enrollment/pdf")]
+    [EnableRateLimiting("documents")]
     public async Task<IActionResult> GetEnrollmentPdf(CancellationToken ct)
     {
         var bytes = await _reportingService.GenerateEnrollmentPdfAsync(ct);

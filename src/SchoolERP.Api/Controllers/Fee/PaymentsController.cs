@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SchoolERP.Business.Fee.DTOs;
@@ -97,6 +98,7 @@ public class PaymentsController : ControllerBase
     }
 
     [HttpGet("transactions/{transactionId:guid}/receipt")]
+    [EnableRateLimiting("documents")]
     public async Task<IActionResult> GetReceipt(Guid transactionId, CancellationToken ct)
     {
         try

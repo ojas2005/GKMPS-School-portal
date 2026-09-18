@@ -85,12 +85,21 @@ public class ExamService : IExamService
             ?? throw new KeyNotFoundException("No marks entry found for this student on this exam.");
 
         var rows = new List<(string, decimal, int, string?)> { (exam.Name, marks.MarksObtained, exam.MaxMarks, marks.Grade) };
-        var document = new ReportCardDocument(studentId, exam.Name, rows, _schoolName);
-        var pdfBytes = document.GeneratePdf();
 
-        var blobPath = $"{studentId}/{examId}.pdf";
-        using var stream = new MemoryStream(pdfBytes);
-        await _blobStorage.UploadAsync(ContainerName, blobPath, stream, "application/pdf", ct);
+        // The file name carries a fingerprint of everything printed on the card, so an
+        // unchanged card is served from storage instead of being rebuilt on every request
+        // (rebuilding cost ~75 database units each time -- enough for one account to drain
+        // the free monthly allowance). Changed marks give a new fingerprint and a fresh card.
+        var fingerprint = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            $"{_schoolName}|{exam.Name}|{marks.MarksObtained}|{exam.MaxMarks}|{marks.Grade}")))[..16].ToLowerInvariant();
+        var blobPath = $"{studentId}/{examId}-{fingerprint}.pdf";
+
+        if (!await _blobStorage.ExistsAsync(ContainerName, blobPath, ct))
+        {
+            var pdfBytes = new ReportCardDocument(studentId, exam.Name, rows, _schoolName).GeneratePdf();
+            using var stream = new MemoryStream(pdfBytes);
+            await _blobStorage.UploadAsync(ContainerName, blobPath, stream, "application/pdf", ct);
+        }
 
         return await _blobStorage.GetSasUrlAsync(ContainerName, blobPath, TimeSpan.FromMinutes(15), ct);
     }
