@@ -18,11 +18,13 @@ public class DatabaseFileStorageService : IBlobStorageService, IFileStoreReader
 {
     private readonly FileStoreDbContext _db;
     private readonly FileLinkSigner _signer;
+    private readonly SchoolERP.Common.ICurrentSession? _session;
 
-    public DatabaseFileStorageService(FileStoreDbContext db, FileLinkSigner signer)
+    public DatabaseFileStorageService(FileStoreDbContext db, FileLinkSigner signer, SchoolERP.Common.ICurrentSession? session = null)
     {
         _db = db;
         _signer = signer;
+        _session = session;
     }
 
     public async Task<string> UploadAsync(string containerName, string blobPath, Stream content, string contentType, CancellationToken ct = default)
@@ -47,7 +49,7 @@ public class DatabaseFileStorageService : IBlobStorageService, IFileStoreReader
     }
 
     public Task<string> GetSasUrlAsync(string containerName, string blobPath, TimeSpan? validFor = null, CancellationToken ct = default) =>
-        Task.FromResult(_signer.CreateLink(containerName, blobPath, validFor ?? TimeSpan.FromMinutes(15), DateTimeOffset.UtcNow));
+        Task.FromResult(_signer.CreateLink(containerName, blobPath, validFor ?? TimeSpan.FromMinutes(15), DateTimeOffset.UtcNow, _session?.SessionId));
 
     public Task<bool> ExistsAsync(string containerName, string blobPath, CancellationToken ct = default) =>
         _db.Files.AnyAsync(f => f.Container == containerName && f.Path == blobPath, ct);

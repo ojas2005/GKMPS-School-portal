@@ -22,27 +22,31 @@ public class FileLinkSigner
         _key = SHA256.HashData(Encoding.UTF8.GetBytes("file-links:" + secret));
     }
 
-    public string Sign(string container, string path, long expiresUnixSeconds)
+    public string Sign(string container, string path, long expiresUnixSeconds, Guid? sessionId = null)
     {
-        var data = Encoding.UTF8.GetBytes($"{container}\n{path}\n{expiresUnixSeconds}");
+        var data = Encoding.UTF8.GetBytes($"{container}\n{path}\n{expiresUnixSeconds}\n{sessionId}");
         return Convert.ToHexString(HMACSHA256.HashData(_key, data)).ToLowerInvariant();
     }
 
-    public bool IsValid(string container, string path, long expiresUnixSeconds, string? signature, DateTimeOffset now)
+    public bool IsValid(string container, string path, long expiresUnixSeconds, string? signature, DateTimeOffset now, Guid? sessionId = null)
     {
         if (string.IsNullOrEmpty(signature) || now.ToUnixTimeSeconds() > expiresUnixSeconds)
             return false;
 
-        var expected = Encoding.ASCII.GetBytes(Sign(container, path, expiresUnixSeconds));
+        var expected = Encoding.ASCII.GetBytes(Sign(container, path, expiresUnixSeconds, sessionId));
         var given = Encoding.ASCII.GetBytes(signature.ToLowerInvariant());
         return CryptographicOperations.FixedTimeEquals(expected, given);
     }
 
-    /// <summary>A relative link to the API's file endpoint; the frontend prefixes its API base URL.</summary>
-    public string CreateLink(string container, string path, TimeSpan validFor, DateTimeOffset now)
+    /// <summary>
+    /// A relative link to the API's file endpoint; the frontend prefixes its API base URL.
+    /// With a session, the link also dies when that session ends (sign-out, inactivity).
+    /// </summary>
+    public string CreateLink(string container, string path, TimeSpan validFor, DateTimeOffset now, Guid? sessionId = null)
     {
         var expires = now.Add(validFor).ToUnixTimeSeconds();
         var encodedPath = string.Join('/', path.Split('/').Select(Uri.EscapeDataString));
-        return $"/api/files/{Uri.EscapeDataString(container)}/{encodedPath}?expires={expires}&sig={Sign(container, path, expires)}";
+        var session = sessionId is null ? "" : $"&s={sessionId}";
+        return $"/api/files/{Uri.EscapeDataString(container)}/{encodedPath}?expires={expires}{session}&sig={Sign(container, path, expires, sessionId)}";
     }
 }

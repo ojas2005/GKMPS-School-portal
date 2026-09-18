@@ -68,4 +68,18 @@ public class FileLinkSignerTests
     {
         Assert.False(Signer().IsValid("fee-receipts", "s/t.pdf", Now.AddMinutes(5).ToUnixTimeSeconds(), null, Now));
     }
+
+    [Fact]
+    public void A_link_belongs_to_the_session_it_was_made_for()
+    {
+        var signer = Signer();
+        var mine = Guid.NewGuid();
+        var link = signer.CreateLink("fee-receipts", "s/t.pdf", TimeSpan.FromMinutes(15), Now, mine);
+        var (expires, sig) = Parse(link);
+
+        Assert.Contains($"&s={mine}", link);
+        Assert.True(signer.IsValid("fee-receipts", "s/t.pdf", expires, sig, Now, mine));
+        Assert.False(signer.IsValid("fee-receipts", "s/t.pdf", expires, sig, Now, Guid.NewGuid()));
+        Assert.False(signer.IsValid("fee-receipts", "s/t.pdf", expires, sig, Now, null));   // stripping the session doesn't help
+    }
 }

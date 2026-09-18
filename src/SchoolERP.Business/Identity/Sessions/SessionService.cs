@@ -17,6 +17,9 @@ public interface ISessionService
     /// </summary>
     Task<bool> CheckAndTouchAsync(Guid sessionId, Guid userId, CancellationToken ct = default);
 
+    /// <summary>Whether the session is still open -- without counting it as activity.</summary>
+    Task<bool> IsOpenAsync(Guid sessionId, CancellationToken ct = default);
+
     /// <summary>For a token refresh: the session if it may continue (and marks it active), otherwise why not.</summary>
     Task<(UserSession? Session, SessionState State)> ContinueAsync(Guid sessionId, Guid userId, CancellationToken ct = default);
 
@@ -90,6 +93,14 @@ public class SessionService : ISessionService
             _cache.Set(SessionKey(sessionId), cached with { LastActivityUtc = now }, SessionOptions.CheckCacheFor);
         }
         return true;
+    }
+
+    public async Task<bool> IsOpenAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        if (!_cache.TryGetValue(SessionKey(sessionId), out CachedSession? cached) || cached is null || EndedForUserSince(cached))
+            cached = await LoadAsync(sessionId, ct);
+        return cached is not null
+            && SessionRules.StateOf(cached.EndedAtUtc, cached.LastActivityUtc, cached.ExpiresAtUtc, Now, _options) == SessionState.Active;
     }
 
     private async Task<CachedSession?> LoadAsync(Guid sessionId, CancellationToken ct)

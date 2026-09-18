@@ -16,17 +16,22 @@ public class FilesController : ControllerBase
 {
     private readonly IFileStoreReader _files;
     private readonly FileLinkSigner _signer;
+    private readonly SchoolERP.Business.Identity.Sessions.ISessionService _sessions;
 
-    public FilesController(IFileStoreReader files, FileLinkSigner signer)
+    public FilesController(IFileStoreReader files, FileLinkSigner signer, SchoolERP.Business.Identity.Sessions.ISessionService sessions)
     {
         _files = files;
         _signer = signer;
+        _sessions = sessions;
     }
 
     [HttpGet("{container}/{**path}")]
-    public async Task<IActionResult> Download(string container, string path, [FromQuery] long expires, [FromQuery] string? sig, CancellationToken ct)
+    public async Task<IActionResult> Download(string container, string path, [FromQuery] long expires, [FromQuery] string? sig, [FromQuery(Name = "s")] Guid? session, CancellationToken ct)
     {
-        if (!_signer.IsValid(container, path, expires, sig, DateTimeOffset.UtcNow))
+        if (!_signer.IsValid(container, path, expires, sig, DateTimeOffset.UtcNow, session))
+            return NotFound();
+        // The link belongs to the sign-in that asked for it: once that ends, so does the link.
+        if (session is { } sid && !await _sessions.IsOpenAsync(sid, ct))
             return NotFound();
 
         var file = await _files.ReadAsync(container, path, ct);
