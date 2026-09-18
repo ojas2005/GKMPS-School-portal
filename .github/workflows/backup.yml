@@ -1,0 +1,103 @@
+name: Nightly database backup
+
+# TiDB Cloud's free plan keeps its own backup for only one day, so a mistake noticed the next
+# morning would be permanent. This takes a nightly copy, proves it restores, encrypts it and
+# keeps it for 90 days.
+#
+# The repository is public, and so are these run logs and artifacts to anyone signed in to
+# GitHub -- so nothing readable ever leaves the runner: the copy is encrypted with
+# BACKUP_PASSPHRASE (held only as a secret, and by the school) before it is uploaded, and no
+# step prints data. The database account is read-only.
+on:
+  schedule:
+    - cron: "30 20 * * *"   # 02:00 in India
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/backup.yml"]   # a changed backup job proves itself straight away
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      # A throwaway database to restore into, so every run proves the copy is usable.
+      scratch:
+        image: pingcap/tidb:v8.5.1
+        ports: ["4000:4000"]
+    env:
+      TIDB_HOST: ${{ secrets.TIDB_HOST }}
+      TIDB_PORT: ${{ secrets.TIDB_PORT }}
+      TIDB_USER: ${{ secrets.TIDB_BACKUP_USER }}
+      MYSQL_PWD: ${{ secrets.TIDB_BACKUP_PASSWORD }}
+      # School data. "files" (generated PDFs) is left out: every PDF is rebuilt from this data
+      # when it's next opened, and copying it nightly would use up the free monthly allowance.
+      DATABASES: identity student staff attendance academic examination fee communication library transport notification reporting
+    steps:
+      - name: Copy the database
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p backup
+          common=(--host="$TIDB_HOST" --port="$TIDB_PORT" --user="$TIDB_USER"
+                  --ssl-mode=VERIFY_IDENTITY --ssl-ca=/etc/ssl/certs/ca-certificates.crt
+                  --single-transaction --skip-lock-tables --no-tablespaces --set-gtid-purged=OFF
+                  --column-statistics=0 --hex-blob --default-character-set=utf8mb4)
+          mysqldump "${common[@]}" --databases $DATABASES > backup/school.sql
+
+          # The audit trail is large and only ever grows, so each night copies just the last
+          # two days of it; together the 90 days of copies cover 90 days of the trail.
+          if mysql --host="$TIDB_HOST" --port="$TIDB_PORT" --user="$TIDB_USER" --ssl-mode=VERIFY_IDENTITY \
+               --ssl-ca=/etc/ssl/certs/ca-certificates.crt -N -e "SHOW DATABASES LIKE 'audit'" | grep -q audit; then
+            mysqldump "${common[@]}" --no-create-info --where="TimestampUtc >= UTC_TIMESTAMP() - INTERVAL 2 DAY" \
+              audit AuditEntries > backup/audit-last-2-days.sql
+          fi
+          echo "Copied: $(du -sh backup | cut -f1)"
+
+      - name: Prove the copy restores
+        run: |
+          set -euo pipefail
+          scratch=(--host=127.0.0.1 --port=4000 --user=root)
+          for i in $(seq 1 30); do MYSQL_PWD= mysql "${scratch[@]}" -e "SELECT 1" >/dev/null 2>&1 && break; sleep 2; done
+          MYSQL_PWD= mysql "${scratch[@]}" < backup/school.sql
+
+          # Every table must come back with the same number of rows as the source.
+          source=(--host="$TIDB_HOST" --port="$TIDB_PORT" --user="$TIDB_USER" --ssl-mode=VERIFY_IDENTITY --ssl-ca=/etc/ssl/certs/ca-certificates.crt)
+          list=$(printf "'%s'," $DATABASES); list=${list%,}
+          tables=$(mysql "${source[@]}" -N -e "SELECT CONCAT(table_schema,'.',table_name) FROM information_schema.tables WHERE table_schema IN ($list) AND table_type='BASE TABLE'")
+          mismatches=0
+          for t in $tables; do
+            db=${t%%.*}; tb=${t#*.}
+            a=$(mysql "${source[@]}" -N -e "SELECT COUNT(*) FROM \`$db\`.\`$tb\`")
+            b=$(MYSQL_PWD= mysql "${scratch[@]}" -N -e "SELECT COUNT(*) FROM \`$db\`.\`$tb\`")
+            if [ "$a" != "$b" ]; then echo "::error::row count differs for $t"; mismatches=$((mismatches+1)); fi
+          done
+          echo "Restored and checked $(echo $tables | wc -w) tables; $mismatches differ"
+          [ "$mismatches" -eq 0 ]
+
+      - name: Encrypt
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          tar -czf backup.tar.gz backup
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 3<<<"$BACKUP_PASSPHRASE" \
+              --symmetric --cipher-algo AES256 --s2k-digest-algo SHA512 --s2k-count 65011712 \
+              --output "gkmps-backup-$(date -u +%Y-%m-%d).tar.gz.gpg" backup.tar.gz
+          shred -u backup.tar.gz backup/*.sql
+
+      - name: Keep for 90 days
+        uses: actions/upload-artifact@v4
+        with:
+          name: gkmps-backup-${{ github.run_id }}
+          path: gkmps-backup-*.tar.gz.gpg
+          retention-days: 90
+          compression-level: 0
+          if-no-files-found: error
