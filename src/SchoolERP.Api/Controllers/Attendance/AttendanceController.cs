@@ -1,3 +1,4 @@
+using SchoolERP.Api.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SchoolERP.Business.Attendance.DTOs;
@@ -54,10 +55,10 @@ public class AttendanceController : ControllerBase
     }
 
     [HttpGet("students/{studentId:guid}/percentage")]
-    public async Task<IActionResult> GetPercentage(Guid studentId, [FromQuery] DateOnly from, [FromQuery] DateOnly to, CancellationToken ct)
+    public async Task<IActionResult> GetPercentage(Guid studentId, [FromQuery] DateOnly from, [FromQuery] DateOnly to, [FromServices] StudentAccessGuard access, CancellationToken ct)
     {
         // Students/parents may only read their OWN attendance.
-        if (!User.CanAccessStudent(studentId))
+        if (!await access.CanReadAsync(User, StudentRecord.Attendance, studentId, ct))
             return Forbid();
 
         var result = await _attendanceService.GetAttendancePercentageAsync(studentId, from, to, ct);
@@ -66,9 +67,9 @@ public class AttendanceController : ControllerBase
 
     // A student's day-by-day attendance log — the student portal's "My Attendance" list.
     [HttpGet("students/{studentId:guid}/records")]
-    public async Task<IActionResult> GetRecords(Guid studentId, [FromQuery] DateOnly from, [FromQuery] DateOnly to, CancellationToken ct)
+    public async Task<IActionResult> GetRecords(Guid studentId, [FromQuery] DateOnly from, [FromQuery] DateOnly to, [FromServices] StudentAccessGuard access, CancellationToken ct)
     {
-        if (!User.CanAccessStudent(studentId))
+        if (!await access.CanReadAsync(User, StudentRecord.Attendance, studentId, ct))
             return Forbid();
 
         var result = await _attendanceService.GetRecordsForStudentAsync(studentId, from, to, ct);

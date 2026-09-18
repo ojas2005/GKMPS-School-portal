@@ -24,6 +24,7 @@ builder.Host.UseSerilog(SharedLogging.Configure("SchoolERP.Api"));
 
 // ---------- Business + data access tiers ----------
 builder.Services.AddBusiness(builder.Configuration);
+builder.Services.AddScoped<SchoolERP.Api.Security.StudentAccessGuard>();
 
 // ---------- Authentication: JWT bearer ----------
 var jwtSection = builder.Configuration.GetSection("Jwt");

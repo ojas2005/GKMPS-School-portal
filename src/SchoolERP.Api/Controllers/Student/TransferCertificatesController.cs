@@ -65,6 +65,9 @@ public class TransferCertificatesController : ControllerBase
     {
         try
         {
+            // Certificates carry the full profile: office roles, or the student/parent for their own.
+            if (!User.IsSelfServiceRole() && !User.CanRead(StudentRecord.Certificates, Guid.Empty, null, null))
+                return Forbid();
             var requiredStudentId = User.IsSelfServiceRole() ? User.StudentId() ?? Guid.Empty : (Guid?)null;
             var sasUrl = await _certificateService.GenerateAndGetDownloadUrlAsync(id, requiredStudentId, ct);
             return Ok(ApiResponse<object>.Ok(new { downloadUrl = sasUrl, expiresInMinutes = 15 }));

@@ -81,8 +81,8 @@ public static class CallerClaims
     }
 
     /// <summary>
-    /// True if the caller may read the given student's records. Staff/teacher pass
-    /// (they are already role-gated); a self-service caller passes only for their own id.
+    /// Self-service check only: a student/parent passes only for their own id, and every staff
+    /// role passes. For what staff may read about a student, use <see cref="StudentAccess"/>.
     /// </summary>
     public static bool CanAccessStudent(this ClaimsPrincipal user, Guid studentId)
     {

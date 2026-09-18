@@ -1,3 +1,4 @@
+using SchoolERP.Api.Security;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -24,9 +25,9 @@ public class ExamsController : ControllerBase
     // A student's results across all their exams. Staff see everything; a student sees
     // only their own PUBLISHED results.
     [HttpGet("students/{studentId:guid}/results")]
-    public async Task<IActionResult> GetStudentResults(Guid studentId, CancellationToken ct)
+    public async Task<IActionResult> GetStudentResults(Guid studentId, [FromServices] StudentAccessGuard access, CancellationToken ct)
     {
-        if (!User.CanAccessStudent(studentId))
+        if (!await access.CanReadAsync(User, StudentRecord.Results, studentId, ct))
             return Forbid();
 
         var publishedOnly = User.IsSelfServiceRole();
@@ -82,10 +83,10 @@ public class ExamsController : ControllerBase
 
     [HttpGet("{examId:guid}/students/{studentId:guid}/report-card")]
     [EnableRateLimiting("documents")]
-    public async Task<IActionResult> GetReportCard(Guid examId, Guid studentId, CancellationToken ct)
+    public async Task<IActionResult> GetReportCard(Guid examId, Guid studentId, [FromServices] StudentAccessGuard access, CancellationToken ct)
     {
         // Students/parents may only read their OWN report card.
-        if (!User.CanAccessStudent(studentId))
+        if (!await access.CanReadAsync(User, StudentRecord.Results, studentId, ct))
             return Forbid();
 
         try

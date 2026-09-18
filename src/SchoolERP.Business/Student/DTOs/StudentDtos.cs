@@ -1,3 +1,4 @@
+using SchoolERP.Common;
 using System.ComponentModel.DataAnnotations;
 
 namespace SchoolERP.Business.Student.DTOs;
@@ -33,9 +34,22 @@ public record UpdateStudentRequest(
     string? Address);
 
 public record StudentSummary(
-    Guid Id, Guid LinkedUserId, string AdmissionNumber, string FullName, DateTime DateOfBirth, string Gender,
+    Guid Id, Guid LinkedUserId, string AdmissionNumber, string FullName, DateTime? DateOfBirth, string? Gender,
     string ClassId, string SectionId, string Status, DateTime AdmissionDateUtc,
-    string? ParentName, string? ParentEmail, string? ParentPhone, string? Address, Guid? ParentUserId = null);
+    string? ParentName, string? ParentEmail, string? ParentPhone, string? Address, Guid? ParentUserId = null)
+{
+    /// <summary>
+    /// This record trimmed to what a caller may see (see SchoolERP.Common.StudentAccess):
+    /// the directory view keeps only who and where the child is; the contact view adds the
+    /// parent's contact details; the full profile is returned as-is.
+    /// </summary>
+    public StudentSummary ViewAs(StudentRecord view) => view switch
+    {
+        StudentRecord.Profile => this,
+        StudentRecord.Contact => this with { DateOfBirth = null, Gender = null, Address = null, ParentUserId = null },
+        _ => this with { DateOfBirth = null, Gender = null, Address = null, ParentUserId = null, ParentName = null, ParentEmail = null, ParentPhone = null }
+    };
+}
 
 // Links (or with null, unlinks) the Parent-role login that may view this student's records.
 public record LinkParentAccountRequest(Guid? ParentUserId);

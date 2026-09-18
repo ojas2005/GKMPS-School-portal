@@ -35,20 +35,20 @@ public class StudentsController : ControllerBase
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
         // Students/parents may only read their OWN record.
-        if (!User.CanAccessStudent(id))
+        if (User.IsSelfServiceRole() && User.StudentId() != id)
             return Forbid();
 
         var student = await _studentService.GetByIdAsync(id, ct);
         if (student is null)
             return NotFound(ApiResponse<object>.Fail("Student not found."));
 
-        // A teacher may read a student's details for enquiry only if they are the
-        // class teacher (head teacher) of that student's class.
-        if (User.Role() == RoleNames.Teacher && User.ClassTeacherOfClassId() != student.ClassId)
+        // Need-to-know: each role sees only as much of the profile as its work requires.
+        var view = User.ProfileView(id, student.ClassId, student.SectionId);
+        if (view is null)
             return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponse<object>.Fail("Only the class teacher of this student's class may view their details."));
+                ApiResponse<object>.Fail("You don't have access to this student's details."));
 
-        return Ok(ApiResponse<StudentSummary>.Ok(student));
+        return Ok(ApiResponse<StudentSummary>.Ok(student.ViewAs(view.Value)));
     }
 
     // The full directory is admin/class-teacher only; students/parents read their own
@@ -69,7 +69,16 @@ public class StudentsController : ControllerBase
         }
 
         var result = await _studentService.SearchAsync(classId, sectionId, keyword, page, pageSize, ct);
-        return Ok(ApiResponse<object>.Ok(result));
+        var visible = new PagedResult<StudentSummary>
+        {
+            Items = result.Items
+                .Select(s => s.ViewAs(User.ProfileView(s.Id, s.ClassId, s.SectionId) ?? StudentRecord.Directory))
+                .ToList(),
+            PageNumber = result.PageNumber,
+            PageSize = result.PageSize,
+            TotalCount = result.TotalCount
+        };
+        return Ok(ApiResponse<object>.Ok(visible));
     }
 
     [HttpPatch("{id:guid}/class")]

@@ -1,3 +1,4 @@
+using SchoolERP.Api.Security;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -35,9 +36,9 @@ public class PaymentsController : ControllerBase
     // A student's own fee ledger. Staff/accountant may read any student; a
     // student/parent may read only their own (enforced via the studentId claim).
     [HttpGet("students/{studentId:guid}")]
-    public async Task<IActionResult> GetForStudent(Guid studentId, CancellationToken ct)
+    public async Task<IActionResult> GetForStudent(Guid studentId, [FromServices] StudentAccessGuard access, CancellationToken ct)
     {
-        if (!User.CanAccessStudent(studentId))
+        if (!await access.CanReadAsync(User, StudentRecord.Fees, studentId, ct))
             return Forbid();
 
         var result = await _feePaymentService.GetPaymentsForStudentAsync(studentId, ct);
@@ -88,9 +89,9 @@ public class PaymentsController : ControllerBase
     // Every receipt for a student -- staff/teacher for any student, a student/parent
     // only their own (same scoping as the fee ledger above).
     [HttpGet("students/{studentId:guid}/transactions")]
-    public async Task<IActionResult> GetTransactionsForStudent(Guid studentId, CancellationToken ct)
+    public async Task<IActionResult> GetTransactionsForStudent(Guid studentId, [FromServices] StudentAccessGuard access, CancellationToken ct)
     {
-        if (!User.CanAccessStudent(studentId))
+        if (!await access.CanReadAsync(User, StudentRecord.Fees, studentId, ct))
             return Forbid();
 
         var result = await _feePaymentService.GetTransactionsForStudentAsync(studentId, ct);
@@ -103,6 +104,10 @@ public class PaymentsController : ControllerBase
     {
         try
         {
+            // Staff need fee access at all (owner/principal/admin/accountant); students and
+            // parents are limited to their own receipts by the service.
+            if (!User.IsSelfServiceRole() && !User.CanRead(StudentRecord.Fees, Guid.Empty, null, null))
+                return Forbid();
             var requiredStudentId = User.IsSelfServiceRole() ? User.StudentId() ?? Guid.Empty : (Guid?)null;
             var url = await _feePaymentService.GetReceiptDownloadUrlAsync(transactionId, requiredStudentId, ct);
             return Ok(ApiResponse<object>.Ok(new { downloadUrl = url, expiresInMinutes = 15 }));
