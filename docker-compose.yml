@@ -32,6 +32,8 @@ services:
       # password is generated and printed once in this container's logs.
       Owner__Username: ${OWNER_USERNAME:-ownerishim}
       Owner__Password: ${OWNER_PASSWORD:-}
+      # Minutes without activity before a user is signed out.
+      Session__IdleTimeoutMinutes: ${SESSION_IDLE_TIMEOUT_MINUTES:-30}
       Cors__AllowedOrigins__0: ${FRONTEND_URL:-http://localhost:4200}
       Seq__Url: ${SEQ_URL:-}
       # Real email delivery (optional). Leave SMTP_HOST empty to log notifications only.

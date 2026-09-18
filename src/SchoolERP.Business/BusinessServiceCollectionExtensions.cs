@@ -1,3 +1,4 @@
+using SchoolERP.Business.Identity.Sessions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using QuestPDF.Infrastructure;
@@ -50,6 +51,10 @@ public static class BusinessServiceCollectionExtensions
         services.AddSingleton<ITokenGenerator, TokenGenerator>();
         services.AddScoped<StudentProfileResolver>();
         services.AddScoped<StaffProfileResolver>();
+        services.AddMemoryCache();
+        services.AddSingleton(TimeProvider.System);
+        services.Configure<SessionOptions>(configuration.GetSection(SessionOptions.SectionName));
+        services.AddScoped<ISessionService, SessionService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
         // Student

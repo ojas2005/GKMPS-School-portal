@@ -1,3 +1,4 @@
+using SchoolERP.Business.Identity.Sessions;
 using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
@@ -13,13 +14,15 @@ public class UserService : IUserService
 {
     private readonly IUserRepository _users;
     private readonly IRefreshTokenRepository _refreshTokens;
+    private readonly ISessionService _sessions;
     private readonly PasswordHasher<User> _passwordHasher = new();
     private readonly ILogger<UserService> _logger;
 
-    public UserService(IUserRepository users, IRefreshTokenRepository refreshTokens, ILogger<UserService> logger)
+    public UserService(IUserRepository users, IRefreshTokenRepository refreshTokens, ISessionService sessions, ILogger<UserService> logger)
     {
         _users = users;
         _refreshTokens = refreshTokens;
+        _sessions = sessions;
         _logger = logger;
     }
 
@@ -58,8 +61,10 @@ public class UserService : IUserService
         await _users.SetActiveStatusAsync(userId, isActive, ct);
         if (!isActive)
         {
-            // A deactivated account must not keep refreshing its way back in.
+            // A deactivated account must not keep refreshing its way back in, and its open
+            // sessions stop working immediately.
             await _refreshTokens.RevokeAllForUserAsync(userId, ct);
+            await _sessions.EndAllForUserAsync(userId, SessionEndReasons.Deactivated, ct);
         }
 
         // Audit trail: who changed what, before/after state -- required for every admin action.
@@ -83,6 +88,7 @@ public class UserService : IUserService
         // Force re-login everywhere -- a session issued under the old password shouldn't
         // survive an admin-initiated reset.
         await _refreshTokens.RevokeAllForUserAsync(userId, ct);
+        await _sessions.EndAllForUserAsync(userId, SessionEndReasons.PasswordReset, ct);
 
         // Audit trail -- never log the password itself, only that it changed.
         _logger.LogInformation(

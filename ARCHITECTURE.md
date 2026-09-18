@@ -146,7 +146,9 @@ sequenceDiagram
   end
 ```
 
-On refresh, presenting an already-revoked token revokes the whole token family for that user (theft-reuse detection) — see `AuthService.RefreshAsync`.
+On refresh, presenting a token that was already rotated (swapped for a newer one) signs the user out everywhere (theft-reuse detection); a token that was merely revoked — by sign-out, a password change or an admin — is just refused, so another device holding it can't sign the user out of their current one. See `AuthService.RefreshAsync`.
+
+**Sessions.** Each sign-in creates a `UserSession`; access tokens carry its id (`sid`) and refresh tokens belong to it. On every signed-in request the JWT handler checks the session is still open (cached ~30 s) and records the request as activity (written at most once a minute). A session ends after `Session:IdleTimeoutMinutes` without activity (+5 minutes' grace for the browser's heartbeat lag), at its 7-day cap, on sign-out, or when a password change, admin reset or deactivation ends all of a user's sessions — immediately, because the check happens on every request rather than when the 15-minute token expires. The browser tracks real user input, warns a minute before timing out, and sends a heartbeat while the user is active but quiet.
 
 ## 5. The atomic-update pattern (used in 4 modules)
 
@@ -173,6 +175,8 @@ Single accounts table for all 8 roles; refresh tokens are stored hashed, never r
 ```mermaid
 erDiagram
   User ||--o{ RefreshToken : has
+  User ||--o{ UserSession : "signs in as"
+  UserSession ||--o{ RefreshToken : issues
   User {
     Guid Id PK
     string Email UK
@@ -195,6 +199,16 @@ erDiagram
     datetime ExpiresAtUtc
     datetime RevokedAtUtc
     string ReplacedByTokenHash
+    string CreatedByIp
+    Guid SessionId FK
+  }
+  UserSession {
+    Guid Id PK
+    Guid UserId FK
+    datetime LastActivityUtc
+    datetime ExpiresAtUtc
+    datetime EndedAtUtc
+    string EndReason
     string CreatedByIp
   }
 ```

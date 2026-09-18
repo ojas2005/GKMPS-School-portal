@@ -1,3 +1,5 @@
+using SchoolERP.Common;
+using SchoolERP.Business.Identity.Sessions;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -46,6 +48,25 @@ builder.Services.AddAuthentication(options =>
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromSeconds(30)
+        };
+
+        // A valid signature isn't enough: the token's sign-in session must still be open. This
+        // is what makes sign-out, the inactivity timeout and admin sign-outs take effect at
+        // once rather than when the 15-minute token runs out -- and it records the request as
+        // activity, keeping the session alive while the user is using the app.
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var sessionId = context.Principal?.SessionId();
+                if (sessionId is null)
+                    return; // issued before sessions existed; it expires within minutes
+
+                var userId = context.Principal!.UserId();
+                var sessions = context.HttpContext.RequestServices.GetRequiredService<ISessionService>();
+                if (userId is null || !await sessions.CheckAndTouchAsync(sessionId.Value, userId.Value, context.HttpContext.RequestAborted))
+                    context.Fail("The session has ended.");
+            }
         };
     });
 builder.Services.AddAuthorization();

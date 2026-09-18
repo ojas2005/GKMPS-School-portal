@@ -14,6 +14,7 @@ public class IdentityDbContext : DbContext
 
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -41,6 +42,18 @@ public class IdentityDbContext : DbContext
             entity.HasIndex(rt => rt.TokenHash).IsUnique();
             entity.HasIndex(rt => new { rt.UserId, rt.ExpiresAtUtc });
             entity.Property(rt => rt.TokenHash).HasMaxLength(512).IsRequired();
+            entity.HasIndex(rt => rt.SessionId);
+        });
+
+        modelBuilder.Entity<UserSession>(entity =>
+        {
+            entity.HasOne(s => s.User)
+                  .WithMany()
+                  .HasForeignKey(s => s.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(s => new { s.UserId, s.EndedAtUtc });
+            entity.Property(s => s.EndReason).HasMaxLength(32);
+            entity.Property(s => s.CreatedByIp).HasMaxLength(64);
         });
 
         modelBuilder.Entity<AuditLog>(entity =>

@@ -70,8 +70,12 @@ Student and Fee services), never each other's tables.
 - **Framework** — ASP.NET Core 9, EF Core 9 (Pomelo MySQL provider)
 - **Data** — TiDB Cloud (MySQL-compatible; one database per module), in-memory caching
 - **Events** — in-process event bus with a background dispatcher (no message broker needed)
-- **Auth** — PBKDF2 password hashing, 15-min JWTs, rotated 7-day refresh tokens (hashed at
-  rest), account lockout, role hierarchy for account management
+- **Auth** — PBKDF2 password hashing, 15-min JWTs, rotated refresh tokens (hashed at rest),
+  account lockout, role hierarchy for account management
+- **Sessions** — every sign-in is a stored session that stays open while the user is active
+  and ends after `Session:IdleTimeoutMinutes` (30) of inactivity, with a one-minute warning
+  in the browser. Sign-out, a password change or an admin deactivating the account ends it
+  at once, not when the access token runs out. Hard cap: 7 days, then sign in again
 - **Files** — QuestPDF receipts, report cards and certificates, stored in their own `files`
   database and shared via signed 15-minute links served by the API
   (`FileStorage__Provider=AzureBlob` switches to Azure Blob Storage + SAS links instead)

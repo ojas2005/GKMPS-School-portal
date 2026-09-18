@@ -16,6 +16,8 @@ public static class CallerClaims
     public const string StaffIdClaim = "staffId";
     public const string ClassTeacherOfClassIdClaim = "classTeacherOfClassId";
     public const string ClassTeacherOfSectionIdClaim = "classTeacherOfSectionId";
+    /// <summary>The sign-in session an access token belongs to (see UserSession).</summary>
+    public const string SessionIdClaim = "sid";
 
     public static string? Role(this ClaimsPrincipal user) =>
         user.FindFirst(ClaimTypes.Role)?.Value;
@@ -37,6 +39,14 @@ public static class CallerClaims
 
     public static string? ClassTeacherOfSectionId(this ClaimsPrincipal user) =>
         user.FindFirst(ClassTeacherOfSectionIdClaim)?.Value;
+
+    // The JWT handler maps "sid" to ClaimTypes.Sid on the way in (as it maps "sub" to
+    // NameIdentifier), so look under both names.
+    public static Guid? SessionId(this ClaimsPrincipal user) =>
+        Guid.TryParse((user.FindFirst(SessionIdClaim) ?? user.FindFirst(ClaimTypes.Sid))?.Value, out var id) ? id : null;
+
+    public static Guid? UserId(this ClaimsPrincipal user) =>
+        Guid.TryParse((user.FindFirst(ClaimTypes.NameIdentifier) ?? user.FindFirst("sub"))?.Value, out var id) ? id : null;
 
     /// <summary>
     /// True if the caller may WRITE class-scoped records (e.g. mark attendance) for the

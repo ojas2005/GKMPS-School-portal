@@ -89,6 +89,7 @@ public static class DataAccessServiceCollectionExtensions
         // Identity
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<IUserSessionRepository, UserSessionRepository>();
         // Student
         services.AddScoped<IStudentRepository, StudentRepository>();
         services.AddScoped<IStudentDocumentRepository, StudentDocumentRepository>();

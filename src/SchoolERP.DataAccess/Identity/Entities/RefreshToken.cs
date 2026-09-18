@@ -12,6 +12,9 @@ public class RefreshToken : BaseEntity
     public Guid UserId { get; set; }
     public User? User { get; set; }
 
+    /// <summary>The sign-in this token belongs to. Null only for tokens issued before sessions existed.</summary>
+    public Guid? SessionId { get; set; }
+
     public required string TokenHash { get; set; }
     public DateTime ExpiresAtUtc { get; set; }
     public DateTime? RevokedAtUtc { get; set; }

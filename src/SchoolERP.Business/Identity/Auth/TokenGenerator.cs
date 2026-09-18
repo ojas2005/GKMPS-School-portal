@@ -14,7 +14,7 @@ public class TokenGenerator : ITokenGenerator
 
     public TokenGenerator(IOptions<JwtOptions> options) => _options = options.Value;
 
-    public string GenerateAccessToken(User user, StudentProfile? studentProfile = null, StaffClaimsProfile? staffProfile = null)
+    public string GenerateAccessToken(User user, StudentProfile? studentProfile = null, StaffClaimsProfile? staffProfile = null, Guid? sessionId = null)
     {
         var claims = new List<Claim>
         {
@@ -24,6 +24,11 @@ public class TokenGenerator : ITokenGenerator
             new(ClaimTypes.Role, user.Role),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+
+        // Ties the token to its sign-in session so ending the session (sign-out, inactivity,
+        // an admin action) stops the token working right away, not when it expires.
+        if (sessionId is not null)
+            claims.Add(new Claim(SchoolERP.Common.CallerClaims.SessionIdClaim, sessionId.Value.ToString()));
 
         // Self-service scoping claims: present only for accounts linked to a student
         // record. Downstream services use these to restrict reads to the caller's own data.

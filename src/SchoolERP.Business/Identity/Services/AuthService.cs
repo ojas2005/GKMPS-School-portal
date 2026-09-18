@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SchoolERP.Business.Identity.Auth;
 using SchoolERP.Business.Identity.DTOs;
+using SchoolERP.Business.Identity.Sessions;
 using SchoolERP.DataAccess.Identity.Entities;
 using SchoolERP.DataAccess.Identity.Repositories.Interfaces;
 using SchoolERP.Business.Identity.Services.Interfaces;
@@ -20,6 +21,7 @@ public class AuthService : IAuthService
 {
     private readonly IUserRepository _users;
     private readonly IRefreshTokenRepository _refreshTokens;
+    private readonly ISessionService _sessions;
     private readonly ITokenGenerator _tokenGenerator;
     private readonly PasswordHasher<User> _passwordHasher = new();
     private readonly IEventPublisher _events;
@@ -33,6 +35,7 @@ public class AuthService : IAuthService
     public AuthService(
         IUserRepository users,
         IRefreshTokenRepository refreshTokens,
+        ISessionService sessions,
         ITokenGenerator tokenGenerator,
         IEventPublisher events,
         StudentProfileResolver studentProfiles,
@@ -43,6 +46,7 @@ public class AuthService : IAuthService
     {
         _users = users;
         _refreshTokens = refreshTokens;
+        _sessions = sessions;
         _tokenGenerator = tokenGenerator;
         _events = events;
         _studentProfiles = studentProfiles;
@@ -181,8 +185,15 @@ public class AuthService : IAuthService
 
         if (!storedToken.IsActive)
         {
-            // Reuse of a revoked/expired token is a signal of possible theft: revoke the whole family.
-            await _refreshTokens.RevokeAllForUserAsync(storedToken.UserId, ct);
+            // A token that was already swapped for a newer one being used again means two
+            // parties hold it -- possible theft, so sign the user out everywhere. A token that
+            // was simply revoked (sign-out, password change, admin action) or expired is just
+            // stale: another device still holding it must not sign out the user's current one.
+            if (storedToken.ReplacedByTokenHash is not null)
+            {
+                await _refreshTokens.RevokeAllForUserAsync(storedToken.UserId, ct);
+                await _sessions.EndAllForUserAsync(storedToken.UserId, SessionEndReasons.TokenReuse, ct);
+            }
             throw new UnauthorizedAccessException("The refresh token has expired or was already used.");
         }
 
@@ -192,6 +203,24 @@ public class AuthService : IAuthService
         if (!user.IsActive)
             throw new UnauthorizedAccessException("This account has been deactivated.");
 
+        // The session must still be alive: not signed out, not idle too long, not past its cap.
+        // Tokens from before sessions existed get a fresh session instead of a forced sign-out.
+        UserSession session;
+        if (storedToken.SessionId is { } sessionId)
+        {
+            var (continued, state) = await _sessions.ContinueAsync(sessionId, user.Id, ct);
+            if (continued is null)
+            {
+                await _refreshTokens.RevokeAsync(storedToken.Id, replacedByTokenHash: null, ct);
+                throw new UnauthorizedAccessException(_sessions.Explain(state));
+            }
+            session = continued;
+        }
+        else
+        {
+            session = await _sessions.StartAsync(user.Id, DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenDays), ipAddress, ct);
+        }
+
         // Rotate: revoke the presented token, issue a brand new pair.
         var newRawRefreshToken = _tokenGenerator.GenerateRefreshTokenRaw();
         var newHash = _tokenGenerator.HashToken(newRawRefreshToken);
@@ -200,12 +229,14 @@ public class AuthService : IAuthService
 
         var profile = await ResolveStudentProfileAsync(user, ct);
         var staffProfile = await ResolveStaffProfileAsync(user, ct);
-        var newAccessToken = _tokenGenerator.GenerateAccessToken(user, profile, staffProfile);
+        var newAccessToken = _tokenGenerator.GenerateAccessToken(user, profile, staffProfile, session.Id);
         var newTokenEntity = new SchoolERP.DataAccess.Identity.Entities.RefreshToken
         {
             UserId = user.Id,
+            SessionId = session.Id,
             TokenHash = newHash,
-            ExpiresAtUtc = DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenDays),
+            // Never outlives the session's hard cap.
+            ExpiresAtUtc = Min(DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenDays), session.ExpiresAtUtc),
             CreatedByIp = ipAddress
         };
         await _refreshTokens.AddAsync(newTokenEntity, ct);
@@ -225,7 +256,8 @@ public class AuthService : IAuthService
             user.Username,
             staffProfile?.StaffId,
             staffProfile?.ClassTeacherOfClassId,
-            staffProfile?.ClassTeacherOfSectionId);
+            staffProfile?.ClassTeacherOfSectionId,
+            _sessions.IdleTimeoutMinutes);
     }
 
     // Possession of the raw refresh token is the proof of ownership here -- no access token
@@ -238,6 +270,10 @@ public class AuthService : IAuthService
         if (stored is not null && stored.RevokedAtUtc is null)
         {
             await _refreshTokens.RevokeAsync(stored.Id, replacedByTokenHash: null, ct);
+        }
+        if (stored?.SessionId is { } sessionId)
+        {
+            await _sessions.EndAsync(sessionId, SessionEndReasons.SignedOut, ct);
         }
     }
 
@@ -260,6 +296,7 @@ public class AuthService : IAuthService
 
         // Sign out every other session, then hand this one a fresh token pair.
         await _refreshTokens.RevokeAllForUserAsync(user.Id, ct);
+        await _sessions.EndAllForUserAsync(user.Id, SessionEndReasons.PasswordChanged, ct);
         _logger.LogInformation("AUDIT actor={UserId} action=User.ChangePassword entity=User entityId={UserId}", user.Id, user.Id);
 
         return await IssueTokensAsync(user, ipAddress, ct);
@@ -267,15 +304,19 @@ public class AuthService : IAuthService
 
     private async Task<AuthResult> IssueTokensAsync(User user, string? ipAddress, CancellationToken ct)
     {
+        // Every sign-in is its own session; its refresh tokens never outlive it.
+        var session = await _sessions.StartAsync(user.Id, DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenDays), ipAddress, ct);
+
         var profile = await ResolveStudentProfileAsync(user, ct);
         var staffProfile = await ResolveStaffProfileAsync(user, ct);
-        var accessToken = _tokenGenerator.GenerateAccessToken(user, profile, staffProfile);
+        var accessToken = _tokenGenerator.GenerateAccessToken(user, profile, staffProfile, session.Id);
         var rawRefreshToken = _tokenGenerator.GenerateRefreshTokenRaw();
         var tokenHash = _tokenGenerator.HashToken(rawRefreshToken);
 
         var refreshTokenEntity = new SchoolERP.DataAccess.Identity.Entities.RefreshToken
         {
             UserId = user.Id,
+            SessionId = session.Id,
             TokenHash = tokenHash,
             ExpiresAtUtc = DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenDays),
             CreatedByIp = ipAddress
@@ -298,6 +339,9 @@ public class AuthService : IAuthService
             user.Username,
             staffProfile?.StaffId,
             staffProfile?.ClassTeacherOfClassId,
-            staffProfile?.ClassTeacherOfSectionId);
+            staffProfile?.ClassTeacherOfSectionId,
+            _sessions.IdleTimeoutMinutes);
     }
+
+    private static DateTime Min(DateTime a, DateTime b) => a < b ? a : b;
 }

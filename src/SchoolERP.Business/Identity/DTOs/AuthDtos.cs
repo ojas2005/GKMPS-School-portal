@@ -40,7 +40,9 @@ public record AuthResult(
     // Present only for staff accounts linked to a staff record.
     Guid? StaffId = null,
     string? ClassTeacherOfClassId = null,
-    string? ClassTeacherOfSectionId = null);
+    string? ClassTeacherOfSectionId = null,
+    // Minutes of inactivity after which the browser should sign the user out.
+    int SessionIdleTimeoutMinutes = 0);
 
 public record UserSummary(Guid Id, string Email, string FullName, string Role, bool IsActive, DateTime? LastLoginAtUtc, string? Username = null);
 

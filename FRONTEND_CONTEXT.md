@@ -36,10 +36,18 @@ with no response body, check this first.
    optional (after a page reload the in-memory one is gone); if you do send it, it must
    belong to the same user. This is a good fit for an Angular `HttpInterceptor` that
    catches 401s, refreshes once, and retries the original request.
-6. `POST {base}/api/auth/logout` with `{ refreshToken }` revokes that refresh token
-   server-side. No `Authorization` header needed.
+6. `POST {base}/api/auth/logout` with `{ refreshToken }` ends that session server-side.
+   No `Authorization` header needed.
 7. `POST {base}/api/auth/change-password` with `{ currentPassword, newPassword }`
-   (signed in) → a fresh token pair; every other session is revoked.
+   (signed in) → a fresh token pair; every other session is ended.
+8. **Sessions and inactivity.** Every sign-in is a server-side session; the access token
+   carries its id (`sid`). Login/refresh responses include `sessionIdleTimeoutMinutes`
+   (default 30). The server treats each signed-in request as activity and ends the session
+   after that many minutes without any (+5 minutes' grace), after which requests get 401 and
+   refresh fails with a message saying why. The frontend (`IdleService`) tracks real user
+   activity — mouse, keyboard, touch, scrolling — shared across tabs, warns a minute before,
+   then signs out; while the user is active but not calling the API it sends
+   `POST {base}/api/sessions/heartbeat` (signed in, at most every 2 minutes).
 
 Account management is hierarchical: the owner (`SuperAdmin`) can create and administer
 any account; a `Principal` only `Admin` and below; an `Admin` only non-admin roles.
@@ -98,6 +106,7 @@ means any authenticated user can call it.
 | `POST /api/auth/refresh` `[public]` | — | body `{refreshToken, accessToken?}` |
 | `POST /api/auth/logout` `[public]` | — | body `{refreshToken}` |
 | `POST /api/auth/change-password` | — | body `{currentPassword, newPassword}` |
+| `POST /api/sessions/heartbeat` | — | keeps the session open while the user is active; returns `{idleTimeoutMinutes}` |
 | `GET /api/users/{id}` | — | admins: anyone; others: only themselves |
 | `GET /api/users?role=&keyword=&page=&pageSize=` | SuperAdmin, Principal, Admin | keyword matches name, email, login ID |
 | `PATCH /api/users/{id}/status?isActive=` | SuperAdmin, Principal, Admin | lower-ranked accounts only |
