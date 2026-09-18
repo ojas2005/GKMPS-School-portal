@@ -186,10 +186,13 @@ public class AuthService : IAuthService
         if (!storedToken.IsActive)
         {
             // A token that was already swapped for a newer one being used again means two
-            // parties hold it -- possible theft, so sign the user out everywhere. A token that
-            // was simply revoked (sign-out, password change, admin action) or expired is just
-            // stale: another device still holding it must not sign out the user's current one.
-            if (storedToken.ReplacedByTokenHash is not null)
+            // parties hold it -- possible theft, so sign the user out everywhere. Two
+            // exceptions: a token swapped only moments ago is almost always a second browser
+            // tab that refreshed at the same time (it retries with the new token), and a token
+            // that was simply revoked (sign-out, password change, admin action) or expired is
+            // just stale -- neither may sign the user out of the session they're using.
+            var justSwapped = storedToken.RevokedAtUtc is { } swappedAt && DateTime.UtcNow - swappedAt < ConcurrentRefreshWindow;
+            if (storedToken.ReplacedByTokenHash is not null && !justSwapped)
             {
                 await _refreshTokens.RevokeAllForUserAsync(storedToken.UserId, ct);
                 await _sessions.EndAllForUserAsync(storedToken.UserId, SessionEndReasons.TokenReuse, ct);
@@ -225,7 +228,12 @@ public class AuthService : IAuthService
         var newRawRefreshToken = _tokenGenerator.GenerateRefreshTokenRaw();
         var newHash = _tokenGenerator.HashToken(newRawRefreshToken);
 
-        await _refreshTokens.RevokeAsync(storedToken.Id, newHash, ct);
+        // Exactly one request may use up a refresh token. Checking "is it active?" and then
+        // revoking it as two steps let two simultaneous requests both pass the check and both
+        // get a fresh login -- a stolen token used at the same moment as the real one went
+        // unnoticed. The conditional swap closes that: the loser is refused.
+        if (!await _refreshTokens.TryRotateAsync(storedToken.Id, newHash, ct))
+            throw new UnauthorizedAccessException("The refresh token has expired or was already used.");
 
         var profile = await ResolveStudentProfileAsync(user, ct);
         var staffProfile = await ResolveStaffProfileAsync(user, ct);
@@ -344,4 +352,8 @@ public class AuthService : IAuthService
     }
 
     private static DateTime Min(DateTime a, DateTime b) => a < b ? a : b;
+
+    // How long after a token is swapped a second use still counts as a concurrent refresh
+    // from another tab rather than as theft.
+    private static readonly TimeSpan ConcurrentRefreshWindow = TimeSpan.FromSeconds(30);
 }

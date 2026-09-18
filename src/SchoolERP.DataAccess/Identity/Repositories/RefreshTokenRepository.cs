@@ -30,6 +30,13 @@ public class RefreshTokenRepository : IRefreshTokenRepository
                 .SetProperty(rt => rt.RevokedAtUtc, DateTime.UtcNow)
                 .SetProperty(rt => rt.ReplacedByTokenHash, replacedByTokenHash), ct);
 
+    public async Task<bool> TryRotateAsync(Guid tokenId, string replacedByTokenHash, CancellationToken ct = default) =>
+        await _db.RefreshTokens
+            .Where(rt => rt.Id == tokenId && rt.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(rt => rt.RevokedAtUtc, DateTime.UtcNow)
+                .SetProperty(rt => rt.ReplacedByTokenHash, replacedByTokenHash), ct) == 1;
+
     public Task<int> RevokeAllForUserAsync(Guid userId, CancellationToken ct = default) =>
         _db.RefreshTokens
             .Where(rt => rt.UserId == userId && rt.RevokedAtUtc == null)

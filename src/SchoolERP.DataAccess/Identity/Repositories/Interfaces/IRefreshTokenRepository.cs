@@ -12,6 +12,13 @@ public interface IRefreshTokenRepository
     /// <summary>Atomic revoke via ExecuteUpdateAsync -- avoids loading the full entity to flip one flag.</summary>
     Task<int> RevokeAsync(Guid tokenId, string? replacedByTokenHash, CancellationToken ct = default);
 
+    /// <summary>
+    /// Swaps an active token for its replacement in one conditional UPDATE. Returns false if
+    /// the token was already revoked or swapped -- e.g. two requests presenting it at the same
+    /// moment: exactly one of them wins.
+    /// </summary>
+    Task<bool> TryRotateAsync(Guid tokenId, string replacedByTokenHash, CancellationToken ct = default);
+
     /// <summary>Revokes every active token for a user (used on password change / suspicious activity).</summary>
     Task<int> RevokeAllForUserAsync(Guid userId, CancellationToken ct = default);
 
