@@ -221,15 +221,15 @@ public class AuthService : IAuthService
             // Password is right; the authenticator code comes next. The challenge proves the
             // first step was passed and expires in five minutes.
             var challenge = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
-            _challenges.Set(ChallengeKey(challenge), new TwoFactorChallengeState(user.Id), TimeSpan.FromMinutes(5));
+            _challenges.Set(ChallengeKey(challenge), new TwoFactorChallengeState(user.Id, request.RememberMe), TimeSpan.FromMinutes(5));
             Audit("auth.login.password-ok", user, ipAddress, "waiting for two-step code");
             return new AuthResult("", "", DateTime.UtcNow, user.Id, "", "", "", TwoFactorRequired: true, TwoFactorChallenge: challenge);
         }
 
         await _users.UpdateLastLoginAsync(user.Id, DateTime.UtcNow, ct);
-        Audit("auth.login", user, ipAddress);
+        Audit("auth.login", user, ipAddress, request.RememberMe ? "kept signed in on this device" : null);
 
-        return await IssueTokensAsync(user, ipAddress, ct);
+        return await IssueTokensAsync(user, ipAddress, ct, request.RememberMe);
     }
 
     public async Task<AuthResult> CompleteTwoFactorLoginAsync(TwoFactorLoginRequest request, string? ipAddress, CancellationToken ct = default)
@@ -255,12 +255,13 @@ public class AuthService : IAuthService
         _challenges.Remove(ChallengeKey(request.Challenge));
         await _users.UpdateLastLoginAsync(user.Id, DateTime.UtcNow, ct);
         Audit("auth.login", user, ipAddress, "with two-step code");
-        return await IssueTokensAsync(user, ipAddress, ct);
+        return await IssueTokensAsync(user, ipAddress, ct, state.RememberMe);
     }
 
-    private sealed class TwoFactorChallengeState(Guid userId)
+    private sealed class TwoFactorChallengeState(Guid userId, bool rememberMe)
     {
         public Guid UserId { get; } = userId;
+        public bool RememberMe { get; } = rememberMe;
         public int Attempts { get; set; }
     }
 
@@ -435,10 +436,15 @@ public class AuthService : IAuthService
         return await IssueTokensAsync(user, ipAddress, ct);
     }
 
-    private async Task<AuthResult> IssueTokensAsync(User user, string? ipAddress, CancellationToken ct)
+    // A sign-in on a shared computer lasts at most this long; "keep me signed in" allows up to
+    // Jwt:RefreshTokenDays.
+    private static readonly TimeSpan UnrememberedSessionLimit = TimeSpan.FromHours(12);
+
+    private async Task<AuthResult> IssueTokensAsync(User user, string? ipAddress, CancellationToken ct, bool rememberMe = false)
     {
         // Every sign-in is its own session; its refresh tokens never outlive it.
-        var session = await _sessions.StartAsync(user.Id, DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenDays), ipAddress, ct);
+        var lasts = rememberMe ? TimeSpan.FromDays(_jwtOptions.RefreshTokenDays) : UnrememberedSessionLimit;
+        var session = await _sessions.StartAsync(user.Id, DateTime.UtcNow.Add(lasts), ipAddress, ct);
 
         var profile = await ResolveStudentProfileAsync(user, ct);
         var staffProfile = await ResolveStaffProfileAsync(user, ct);
@@ -452,7 +458,7 @@ public class AuthService : IAuthService
             UserId = user.Id,
             SessionId = session.Id,
             TokenHash = tokenHash,
-            ExpiresAtUtc = DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenDays),
+            ExpiresAtUtc = Min(DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenDays), session.ExpiresAtUtc),
             CreatedByIp = ipAddress
         };
 

@@ -13,7 +13,10 @@ public record RegisterRequest(
 public record LoginRequest(
     // Username OR email — the owner hands out short login ids, staff may use email.
     [Required] string LoginId,
-    [Required] string Password);
+    [Required] string Password,
+    // "Keep me signed in on this device": up to Jwt:RefreshTokenDays. Otherwise the sign-in
+    // lasts at most 12 hours -- the default, because many people share school computers.
+    bool RememberMe = false);
 
 // AccessToken is optional: the frontend keeps it in memory only, so after a page reload
 // the refresh token (a 256-bit random value, stored hashed) is all it has. When the old
