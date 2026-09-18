@@ -52,6 +52,9 @@ public static class BusinessServiceCollectionExtensions
         services.AddScoped<StudentProfileResolver>();
         services.AddScoped<StaffProfileResolver>();
         services.AddMemoryCache();
+        services.AddSingleton<SchoolERP.Business.Common.Audit.ChannelAuditTrail>();
+        services.AddSingleton<SchoolERP.Common.Audit.IAuditTrail>(sp => sp.GetRequiredService<SchoolERP.Business.Common.Audit.ChannelAuditTrail>());
+        services.AddHostedService<SchoolERP.Business.Common.Audit.AuditWriter>();
         services.AddSingleton(TimeProvider.System);
         services.Configure<SessionOptions>(configuration.GetSection(SessionOptions.SectionName));
         services.AddScoped<ISessionService, SessionService>();

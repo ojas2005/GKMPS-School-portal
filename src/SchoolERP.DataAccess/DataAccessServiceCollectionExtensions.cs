@@ -65,6 +65,8 @@ public static class DataAccessServiceCollectionExtensions
         (typeof(ReportingDbContext), "reporting"),
         // Not a school module: generated PDFs, when FileStorage:Provider is Database (the default).
         (typeof(FileStoreDbContext), "files"),
+        // Not a school module: the audit trail.
+        (typeof(SchoolERP.DataAccess.Audit.AuditDbContext), "audit"),
     };
 
     // TiDB speaks the MySQL 8 wire protocol; pinning the version avoids a connection at startup.
@@ -85,6 +87,9 @@ public static class DataAccessServiceCollectionExtensions
         AddContext<NotificationDbContext>(services, configuration, "notification");
         AddContext<ReportingDbContext>(services, configuration, "reporting");
         AddContext<FileStoreDbContext>(services, configuration, "files");
+        AddContext<SchoolERP.DataAccess.Audit.AuditDbContext>(services, configuration, "audit");
+        services.AddScoped<SchoolERP.Common.Audit.IAuditSink, SchoolERP.DataAccess.Audit.DatabaseAuditSink>();
+        services.AddScoped<SchoolERP.DataAccess.Audit.IAuditReader, SchoolERP.DataAccess.Audit.AuditReader>();
 
         // Identity
         services.AddScoped<IUserRepository, UserRepository>();

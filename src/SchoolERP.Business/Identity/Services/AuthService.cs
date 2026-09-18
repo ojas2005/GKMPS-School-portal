@@ -9,6 +9,7 @@ using SchoolERP.DataAccess.Identity.Repositories.Interfaces;
 using SchoolERP.Business.Identity.Services.Interfaces;
 using SchoolERP.Common;
 using SchoolERP.Common.Events;
+using SchoolERP.Common.Audit;
 
 namespace SchoolERP.Business.Identity.Services;
 
@@ -22,6 +23,7 @@ public class AuthService : IAuthService
     private readonly IUserRepository _users;
     private readonly IRefreshTokenRepository _refreshTokens;
     private readonly ISessionService _sessions;
+    private readonly IAuditTrail _audit;
     private readonly ITokenGenerator _tokenGenerator;
     private readonly PasswordHasher<User> _passwordHasher = new();
     private readonly IEventPublisher _events;
@@ -36,6 +38,7 @@ public class AuthService : IAuthService
         IUserRepository users,
         IRefreshTokenRepository refreshTokens,
         ISessionService sessions,
+        IAuditTrail audit,
         ITokenGenerator tokenGenerator,
         IEventPublisher events,
         StudentProfileResolver studentProfiles,
@@ -47,6 +50,7 @@ public class AuthService : IAuthService
         _users = users;
         _refreshTokens = refreshTokens;
         _sessions = sessions;
+        _audit = audit;
         _tokenGenerator = tokenGenerator;
         _events = events;
         _studentProfiles = studentProfiles;
@@ -59,6 +63,9 @@ public class AuthService : IAuthService
 
     // Resolves the linked student profile for self-service accounts: a Student's own record,
     // or for a Parent the child whose record points at this login (StudentProfile.ParentUserId).
+    private void Audit(string action, User? user, string? ip, string? detail = null) =>
+        _audit.Record(new AuditRecord(DateTime.UtcNow, action, user?.Id, user?.Role, user?.Id.ToString(), null, ip, detail));
+
     private async Task<StudentProfile?> ResolveStudentProfileAsync(User user, CancellationToken ct) =>
         user.Role switch
         {
@@ -110,17 +117,25 @@ public class AuthService : IAuthService
         }, ct);
 
         _logger.LogInformation("New account registered: {UserId} ({Role})", user.Id, user.Role);
+        Audit("user.created", user, null, $"role={user.Role}");
 
         return await IssueTokensAsync(user, ipAddress: null, ct);
     }
 
     public async Task<AuthResult> LoginAsync(LoginRequest request, string? ipAddress, CancellationToken ct = default)
     {
-        var user = await _users.FindByLoginAsync(request.LoginId, ct)
-            ?? throw new UnauthorizedAccessException("Invalid login ID or password.");
+        var user = await _users.FindByLoginAsync(request.LoginId, ct);
+        if (user is null)
+        {
+            Audit("auth.login.unknown-user", null, ipAddress, $"loginId={request.LoginId}");
+            throw new UnauthorizedAccessException("Invalid login ID or password.");
+        }
 
         if (!user.IsActive)
+        {
+            Audit("auth.login.deactivated", user, ipAddress);
             throw new UnauthorizedAccessException("This account has been deactivated.");
+        }
 
         // Checked before the password itself so a locked-out account never leaks whether
         // the attempted password was actually correct.
@@ -149,15 +164,18 @@ public class AuthService : IAuthService
                 _logger.LogWarning(
                     "AUDIT action=User.LockedOut entity=User entityId={UserId} attempts={Attempts} lockoutEndUtc={LockoutEndUtc}",
                     user.Id, attempts, lockoutEndUtc);
+                Audit("auth.lockout", user, ipAddress, $"attempts={attempts}");
                 throw new UnauthorizedAccessException(
                     $"Too many failed attempts. Account locked until {lockoutEndUtc:HH:mm} UTC.");
             }
 
+            Audit("auth.login.failed", user, ipAddress, $"attempt={attempts}");
             throw new UnauthorizedAccessException("Invalid login ID or password.");
         }
 
         await _users.ResetFailedLoginAsync(user.Id, ct);
         await _users.UpdateLastLoginAsync(user.Id, DateTime.UtcNow, ct);
+        Audit("auth.login", user, ipAddress);
 
         return await IssueTokensAsync(user, ipAddress, ct);
     }
@@ -196,6 +214,8 @@ public class AuthService : IAuthService
             {
                 await _refreshTokens.RevokeAllForUserAsync(storedToken.UserId, ct);
                 await _sessions.EndAllForUserAsync(storedToken.UserId, SessionEndReasons.TokenReuse, ct);
+                _audit.Record(new AuditRecord(DateTime.UtcNow, "auth.token-reuse", storedToken.UserId, storedToken.User?.Role, storedToken.UserId.ToString(), null, ipAddress,
+                    "an already-used refresh token was presented again; all sessions ended"));
             }
             throw new UnauthorizedAccessException("The refresh token has expired or was already used.");
         }
@@ -283,6 +303,8 @@ public class AuthService : IAuthService
         {
             await _sessions.EndAsync(sessionId, SessionEndReasons.SignedOut, ct);
         }
+        if (stored is not null)
+            _audit.Record(new AuditRecord(DateTime.UtcNow, "auth.logout", stored.UserId, stored.User?.Role, stored.UserId.ToString()));
     }
 
     public async Task<AuthResult> ChangePasswordAsync(Guid userId, ChangePasswordRequest request, string? ipAddress, CancellationToken ct = default)
@@ -306,6 +328,7 @@ public class AuthService : IAuthService
         await _refreshTokens.RevokeAllForUserAsync(user.Id, ct);
         await _sessions.EndAllForUserAsync(user.Id, SessionEndReasons.PasswordChanged, ct);
         _logger.LogInformation("AUDIT actor={UserId} action=User.ChangePassword entity=User entityId={UserId}", user.Id, user.Id);
+        Audit("auth.password.changed", user, ipAddress);
 
         return await IssueTokensAsync(user, ipAddress, ct);
     }

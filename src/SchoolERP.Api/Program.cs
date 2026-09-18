@@ -1,3 +1,4 @@
+using SchoolERP.Api.Security;
 using SchoolERP.Common;
 using SchoolERP.Business.Identity.Sessions;
 using System.Text;
@@ -158,6 +159,7 @@ app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
+app.UseRequestAudit();
 
 app.MapControllers();
 

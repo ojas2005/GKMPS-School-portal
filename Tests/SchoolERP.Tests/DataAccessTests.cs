@@ -39,7 +39,8 @@ public class DataAccessTests
     {
         var databases = DataAccessServiceCollectionExtensions.Modules.Select(m => m.Database).ToList();
 
-        Assert.Equal(13, databases.Distinct().Count());
+        Assert.Equal(14, databases.Distinct().Count());
+        Assert.Contains("audit", databases);
         Assert.Contains("files", databases);
         Assert.Contains("identity", databases);
         Assert.Contains("reporting", databases);

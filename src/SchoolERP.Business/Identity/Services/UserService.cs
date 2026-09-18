@@ -15,14 +15,16 @@ public class UserService : IUserService
     private readonly IUserRepository _users;
     private readonly IRefreshTokenRepository _refreshTokens;
     private readonly ISessionService _sessions;
+    private readonly SchoolERP.Common.Audit.IAuditTrail _audit;
     private readonly PasswordHasher<User> _passwordHasher = new();
     private readonly ILogger<UserService> _logger;
 
-    public UserService(IUserRepository users, IRefreshTokenRepository refreshTokens, ISessionService sessions, ILogger<UserService> logger)
+    public UserService(IUserRepository users, IRefreshTokenRepository refreshTokens, ISessionService sessions, SchoolERP.Common.Audit.IAuditTrail audit, ILogger<UserService> logger)
     {
         _users = users;
         _refreshTokens = refreshTokens;
         _sessions = sessions;
+        _audit = audit;
         _logger = logger;
     }
 
@@ -67,6 +69,9 @@ public class UserService : IUserService
             await _sessions.EndAllForUserAsync(userId, SessionEndReasons.Deactivated, ct);
         }
 
+        _audit.Record(new SchoolERP.Common.Audit.AuditRecord(DateTime.UtcNow, isActive ? "user.activated" : "user.deactivated",
+            Guid.TryParse(actorUserId, out var actorA) ? actorA : null, actorRole, userId.ToString(), Detail: $"was active={before.IsActive}"));
+
         // Audit trail: who changed what, before/after state -- required for every admin action.
         _logger.LogInformation(
             "AUDIT actor={ActorUserId} role={ActorRole} action=User.SetActiveStatus entity=User entityId={UserId} before={Before} after={After}",
@@ -90,6 +95,9 @@ public class UserService : IUserService
         await _refreshTokens.RevokeAllForUserAsync(userId, ct);
         await _sessions.EndAllForUserAsync(userId, SessionEndReasons.PasswordReset, ct);
 
+        _audit.Record(new SchoolERP.Common.Audit.AuditRecord(DateTime.UtcNow, "user.password.reset",
+            Guid.TryParse(actorUserId, out var actorR) ? actorR : null, actorRole, userId.ToString()));
+
         // Audit trail -- never log the password itself, only that it changed.
         _logger.LogInformation(
             "AUDIT actor={ActorUserId} role={ActorRole} action=User.PasswordReset entity=User entityId={UserId}",
@@ -109,6 +117,8 @@ public class UserService : IUserService
             throw new InvalidOperationException("This account has already been used; deactivate it instead of deleting it.");
 
         await _users.HardDeleteAsync(userId, ct);
+        _audit.Record(new SchoolERP.Common.Audit.AuditRecord(DateTime.UtcNow, "user.deleted",
+            Guid.TryParse(actorUserId, out var actorD) ? actorD : null, actorRole, userId.ToString(), Detail: "never-used account removed"));
 
         _logger.LogInformation(
             "AUDIT actor={ActorUserId} role={ActorRole} action=User.DeleteUnused entity=User entityId={UserId}",
