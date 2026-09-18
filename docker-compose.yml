@@ -21,6 +21,8 @@ services:
       # One server hosts every module's database (identity, student, fee, ...); the app picks
       # the database per module. Production uses TiDB Cloud (TLS VerifyFull).
       ConnectionStrings__SchoolDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
+      # Generated PDFs: "Database" (default, free) or "AzureBlob" (uses the connection below).
+      FileStorage__Provider: ${FILE_STORAGE_PROVIDER:-Database}
       ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
       BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-}
       Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}

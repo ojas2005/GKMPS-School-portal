@@ -184,7 +184,8 @@ public class FeePaymentService : IFeePaymentService
         if (requiredStudentId.HasValue && payment.StudentId != requiredStudentId.Value)
             throw new UnauthorizedAccessException("You can only download your own receipts.");
 
-        if (string.IsNullOrEmpty(transaction.ReceiptBlobPath))
+        if (string.IsNullOrEmpty(transaction.ReceiptBlobPath)
+            || !await _blobStorage.ExistsAsync(ContainerName, transaction.ReceiptBlobPath, ct))
         {
 
             // Everything this student still owes, not just the one due this payment went

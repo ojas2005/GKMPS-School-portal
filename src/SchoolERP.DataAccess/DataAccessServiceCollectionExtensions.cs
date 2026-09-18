@@ -63,6 +63,8 @@ public static class DataAccessServiceCollectionExtensions
         (typeof(TransportDbContext), "transport"),
         (typeof(NotificationDbContext), "notification"),
         (typeof(ReportingDbContext), "reporting"),
+        // Not a school module: generated PDFs, when FileStorage:Provider is Database (the default).
+        (typeof(FileStoreDbContext), "files"),
     };
 
     // TiDB speaks the MySQL 8 wire protocol; pinning the version avoids a connection at startup.
@@ -82,6 +84,7 @@ public static class DataAccessServiceCollectionExtensions
         AddContext<TransportDbContext>(services, configuration, "transport");
         AddContext<NotificationDbContext>(services, configuration, "notification");
         AddContext<ReportingDbContext>(services, configuration, "reporting");
+        AddContext<FileStoreDbContext>(services, configuration, "files");
 
         // Identity
         services.AddScoped<IUserRepository, UserRepository>();
@@ -125,9 +128,20 @@ public static class DataAccessServiceCollectionExtensions
         // Reporting
         services.AddScoped<IReportSnapshotRepository, ReportSnapshotRepository>();
 
-        // Receipts, report cards and transfer certificates (Azure Blob Storage / Azurite).
-        services.AddSingleton(_ => new BlobServiceClient(configuration.GetConnectionString("BlobStorage")));
-        services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
+        // Receipts, report cards and transfer certificates. The database is the default: it
+        // costs nothing extra and the files are tiny. Azure Blob Storage (or Azurite) is opt-in.
+        services.AddSingleton<FileLinkSigner>();
+        services.AddScoped<DatabaseFileStorageService>();
+        services.AddScoped<IFileStoreReader>(sp => sp.GetRequiredService<DatabaseFileStorageService>());
+        if (string.Equals(configuration["FileStorage:Provider"], "AzureBlob", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton(_ => new BlobServiceClient(configuration.GetConnectionString("BlobStorage")));
+            services.AddScoped<IBlobStorageService, AzureBlobStorageService>();
+        }
+        else
+        {
+            services.AddScoped<IBlobStorageService>(sp => sp.GetRequiredService<DatabaseFileStorageService>());
+        }
 
         return services;
     }

@@ -108,7 +108,8 @@ public class TransferCertificateService : ITransferCertificateService
         var student = certificate.Student ?? await _students.FindByIdAsync(certificate.StudentId, ct)
             ?? throw new KeyNotFoundException("Student not found.");
 
-        if (!certificate.IsPdfGenerated || string.IsNullOrEmpty(certificate.BlobPath))
+        var alreadyGenerated = certificate.IsPdfGenerated && !string.IsNullOrEmpty(certificate.BlobPath);
+        if (!alreadyGenerated || !await _blobStorage.ExistsAsync(ContainerName, certificate.BlobPath!, ct))
         {
             var document = new TransferCertificateDocument(student, certificate, _schoolName);
             var pdfBytes = document.GeneratePdf();
@@ -120,15 +121,19 @@ public class TransferCertificateService : ITransferCertificateService
             await _certificates.MarkPdfGeneratedAsync(certificateId, blobPath, ct);
             certificate.BlobPath = blobPath;
 
-            await _events.PublishAsync(new CertificateGeneratedEvent
+            // Announce the certificate once, not again when a missing file is rebuilt.
+            if (!alreadyGenerated)
             {
-                DocumentType = "TransferCertificate",
-                SubjectId = student.Id,
-                VerificationCode = certificate.VerificationCode
-            }, ct);
+                await _events.PublishAsync(new CertificateGeneratedEvent
+                {
+                    DocumentType = "TransferCertificate",
+                    SubjectId = student.Id,
+                    VerificationCode = certificate.VerificationCode
+                }, ct);
+            }
         }
 
-        // Time-limited SAS URL -- never a permanent public link.
+        // Time-limited signed link -- never a permanent public one.
         return await _blobStorage.GetSasUrlAsync(ContainerName, certificate.BlobPath!, TimeSpan.FromMinutes(15), ct);
     }
 

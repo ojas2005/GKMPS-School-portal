@@ -57,6 +57,12 @@ public class AzureBlobStorageService : IBlobStorageService
         return Task.FromResult(RewriteForPublicAccess(sasUri));
     }
 
+    public async Task<bool> ExistsAsync(string containerName, string blobPath, CancellationToken ct = default)
+    {
+        var blob = _blobServiceClient.GetBlobContainerClient(containerName).GetBlobClient(blobPath);
+        return (await blob.ExistsAsync(ct)).Value;
+    }
+
     private string RewriteForPublicAccess(Uri sasUri)
     {
         if (string.IsNullOrEmpty(_publicBaseUrl)) return sasUri.ToString();

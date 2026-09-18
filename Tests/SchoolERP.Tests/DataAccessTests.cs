@@ -35,11 +35,12 @@ public class DataAccessTests
     }
 
     [Fact]
-    public void All_twelve_module_databases_are_registered()
+    public void All_twelve_module_databases_and_the_file_store_are_registered()
     {
         var databases = DataAccessServiceCollectionExtensions.Modules.Select(m => m.Database).ToList();
 
-        Assert.Equal(12, databases.Distinct().Count());
+        Assert.Equal(13, databases.Distinct().Count());
+        Assert.Contains("files", databases);
         Assert.Contains("identity", databases);
         Assert.Contains("reporting", databases);
     }
