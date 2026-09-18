@@ -4,7 +4,7 @@ namespace SchoolERP.Business.Identity.DTOs;
 
 public record RegisterRequest(
     [Required, EmailAddress] string Email,
-    [Required, MinLength(8)] string Password,
+    [Required, MinLength(10), MaxLength(128)] string Password,
     [Required] string FullName,
     [Required] string Role,
     // Optional short login id the owner hands to the student/teacher (e.g. "adm1042").
@@ -22,7 +22,7 @@ public record RefreshRequest(string? AccessToken, [Required] string RefreshToken
 
 public record LogoutRequest([Required] string RefreshToken);
 
-public record ChangePasswordRequest([Required] string CurrentPassword, [Required, MinLength(8)] string NewPassword);
+public record ChangePasswordRequest([Required] string CurrentPassword, [Required, MinLength(10), MaxLength(128)] string NewPassword);
 
 public record AuthResult(
     string AccessToken,
@@ -58,4 +58,4 @@ public record TwoFactorLoginRequest([Required] string Challenge, [Required] stri
 
 public record UserSummary(Guid Id, string Email, string FullName, string Role, bool IsActive, DateTime? LastLoginAtUtc, string? Username = null);
 
-public record SetPasswordRequest([Required, MinLength(8)] string NewPassword);
+public record SetPasswordRequest([Required, MinLength(10), MaxLength(128)] string NewPassword);

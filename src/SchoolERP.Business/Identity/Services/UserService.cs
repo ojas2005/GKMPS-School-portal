@@ -17,16 +17,18 @@ public class UserService : IUserService
     private readonly ISessionService _sessions;
     private readonly SchoolERP.Common.Audit.IAuditTrail _audit;
     private readonly SchoolERP.Business.Identity.TwoFactor.ITwoFactorService _twoFactor;
+    private readonly string? _schoolName;
     private readonly PasswordHasher<User> _passwordHasher = new();
     private readonly ILogger<UserService> _logger;
 
-    public UserService(IUserRepository users, IRefreshTokenRepository refreshTokens, ISessionService sessions, SchoolERP.Common.Audit.IAuditTrail audit, SchoolERP.Business.Identity.TwoFactor.ITwoFactorService twoFactor, ILogger<UserService> logger)
+    public UserService(IUserRepository users, IRefreshTokenRepository refreshTokens, ISessionService sessions, SchoolERP.Common.Audit.IAuditTrail audit, SchoolERP.Business.Identity.TwoFactor.ITwoFactorService twoFactor, IConfiguration configuration, ILogger<UserService> logger)
     {
         _users = users;
         _refreshTokens = refreshTokens;
         _sessions = sessions;
         _audit = audit;
         _twoFactor = twoFactor;
+        _schoolName = configuration["School:Name"];
         _logger = logger;
     }
 
@@ -88,6 +90,9 @@ public class UserService : IUserService
             ?? throw new KeyNotFoundException("User not found.");
 
         EnsureCanManage(actorRole, user);
+
+        var problems = SchoolERP.Business.Identity.Passwords.PasswordPolicy.Check(newPassword, user.Username, user.Email, user.FullName, _schoolName);
+        if (problems.Count > 0) throw new InvalidOperationException(string.Join(" ", problems));
 
         var newHash = _passwordHasher.HashPassword(user, newPassword);
         await _users.SetPasswordHashAsync(userId, newHash, ct);

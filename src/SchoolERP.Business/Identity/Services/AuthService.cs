@@ -5,6 +5,7 @@ using SchoolERP.Business.Identity.Auth;
 using SchoolERP.Business.Identity.DTOs;
 using SchoolERP.Business.Identity.Sessions;
 using SchoolERP.Business.Identity.TwoFactor;
+using SchoolERP.Business.Identity.Passwords;
 using Microsoft.Extensions.Caching.Memory;
 using SchoolERP.DataAccess.Identity.Entities;
 using SchoolERP.DataAccess.Identity.Repositories.Interfaces;
@@ -36,7 +37,9 @@ public class AuthService : IAuthService
     private readonly JwtOptions _jwtOptions;
     private readonly ILogger<AuthService> _logger;
     private readonly int _maxFailedAttempts;
+    private readonly int _maxFailedAttemptsEverywhere;
     private readonly TimeSpan _lockoutDuration;
+    private readonly string? _schoolName;
 
     public AuthService(
         IUserRepository users,
@@ -66,6 +69,8 @@ public class AuthService : IAuthService
         _jwtOptions = jwtOptions.Value;
         _logger = logger;
         _maxFailedAttempts = configuration.GetValue("AccountLockout:MaxFailedAttempts", 5);
+        _maxFailedAttemptsEverywhere = configuration.GetValue("AccountLockout:MaxFailedAttemptsEverywhere", 30);
+        _schoolName = configuration["School:Name"];
         _lockoutDuration = TimeSpan.FromMinutes(configuration.GetValue("AccountLockout:LockoutMinutes", 15));
     }
 
@@ -102,6 +107,10 @@ public class AuthService : IAuthService
         if (username is not null && await _users.ExistsByUsernameAsync(username, ct))
             throw new InvalidOperationException($"The login ID '{username}' is already taken.");
 
+        // Even a first password (changed at first sign-in) mustn't be easy to guess before then.
+        var problems = PasswordPolicy.Check(request.Password, username, request.Email, request.FullName, _schoolName);
+        if (problems.Count > 0) throw new InvalidOperationException(string.Join(" ", problems));
+
         var user = new User
         {
             Email = request.Email.ToLowerInvariant(),
@@ -135,57 +144,76 @@ public class AuthService : IAuthService
         return new RegisteredUser(user.Id, user.Email, user.Username, user.FullName, user.Role);
     }
 
+    // One message for every refused sign-in -- unknown login ID, wrong password, a paused
+    // account -- so the reply never reveals which login IDs exist or which are locked.
+    private const string SignInRefused = "Invalid login ID or password. After several wrong attempts, sign-in is paused for a while.";
+
+    // Verified against when the login ID doesn't exist, so an unknown ID takes as long to
+    // refuse as a wrong password does and timing can't tell them apart either.
+    private static readonly string DecoyHash = new PasswordHasher<User>().HashPassword(
+        new User { Email = "decoy@invalid", FullName = "decoy", Role = RoleNames.Student },
+        Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24)));
+
     public async Task<AuthResult> LoginAsync(LoginRequest request, string? ipAddress, CancellationToken ct = default)
     {
         var user = await _users.FindByLoginAsync(request.LoginId, ct);
-        if (user is null)
+        if (user is null || string.IsNullOrEmpty(user.PasswordHash))
         {
-            Audit("auth.login.unknown-user", null, ipAddress, $"loginId={request.LoginId}");
-            throw new UnauthorizedAccessException("Invalid login ID or password.");
+            _passwordHasher.VerifyHashedPassword(user ?? new User { Email = "", FullName = "", Role = "" }, DecoyHash, request.Password ?? "");
+            Audit("auth.login.unknown-user", user, ipAddress, $"loginId={request.LoginId}");
+            throw new UnauthorizedAccessException(SignInRefused);
         }
 
-        if (!user.IsActive)
+        // Wrong guesses pause sign-in for that account from that network address, so an
+        // attacker elsewhere can't lock the real user out by guessing. Many wrong guesses
+        // from anywhere (a spread-out attack) also pause the account as a whole.
+        var pauseKey = $"login-fails:{user.Id}:{ipAddress}";
+        var pausedHere = _challenges.TryGetValue(pauseKey, out int failsHere) && failsHere >= _maxFailedAttempts;
+        var pausedEverywhere = user.LockoutEndUtc is { } lockoutEnd && lockoutEnd > DateTime.UtcNow;
+        if (pausedHere || pausedEverywhere)
         {
-            Audit("auth.login.deactivated", user, ipAddress);
-            throw new UnauthorizedAccessException("This account has been deactivated.");
+            // Same work and the same answer as a wrong password -- even the right password
+            // gets no different reply while paused, so the pause can't be used to test guesses.
+            _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password ?? "");
+            Audit("auth.login.paused", user, ipAddress, pausedEverywhere ? "account paused" : "paused for this address");
+            throw new UnauthorizedAccessException(SignInRefused);
         }
 
-        // Checked before the password itself so a locked-out account never leaks whether
-        // the attempted password was actually correct.
-        if (user.LockoutEndUtc is { } lockoutEnd && lockoutEnd > DateTime.UtcNow)
-            throw new UnauthorizedAccessException(
-                $"Too many failed attempts. Try again after {lockoutEnd:HH:mm} UTC.");
-
-        if (string.IsNullOrEmpty(user.PasswordHash))
-            throw new UnauthorizedAccessException("This account has no password set. Contact the school administrator.");
-
-        var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+        var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password ?? "");
         if (verifyResult == PasswordVerificationResult.Failed)
         {
+            failsHere++;
+            _challenges.Set(pauseKey, failsHere, _lockoutDuration);
+
             // IncrementFailedLoginAttemptsAsync is a raw SQL increment (ExecuteUpdateAsync) --
-            // it bypasses the change tracker, so re-querying by Id afterwards on this same
-            // DbContext would just hand back the already-tracked `user` instance untouched
-            // (EF's identity map doesn't refresh tracked entities from a fresh row). Compute
-            // the post-increment count from the value already in hand instead of reloading.
+            // it bypasses the change tracker, so compute the new count from the value in hand.
             var attempts = user.FailedLoginAttempts + 1;
             await _users.IncrementFailedLoginAttemptsAsync(user.Id, ct);
-
-            if (attempts >= _maxFailedAttempts)
+            if (attempts >= _maxFailedAttemptsEverywhere)
             {
                 var lockoutEndUtc = DateTime.UtcNow.Add(_lockoutDuration);
                 await _users.SetLockoutAsync(user.Id, lockoutEndUtc, ct);
-                _logger.LogWarning(
-                    "AUDIT action=User.LockedOut entity=User entityId={UserId} attempts={Attempts} lockoutEndUtc={LockoutEndUtc}",
-                    user.Id, attempts, lockoutEndUtc);
-                Audit("auth.lockout", user, ipAddress, $"attempts={attempts}");
-                throw new UnauthorizedAccessException(
-                    $"Too many failed attempts. Account locked until {lockoutEndUtc:HH:mm} UTC.");
+                Audit("auth.lockout", user, ipAddress, $"attempts={attempts}, from anywhere");
             }
-
-            Audit("auth.login.failed", user, ipAddress, $"attempt={attempts}");
-            throw new UnauthorizedAccessException("Invalid login ID or password.");
+            else if (failsHere == _maxFailedAttempts)
+            {
+                Audit("auth.lockout", user, ipAddress, $"attempts={failsHere}, this address only");
+            }
+            else
+            {
+                Audit("auth.login.failed", user, ipAddress, $"attempt={failsHere}");
+            }
+            throw new UnauthorizedAccessException(SignInRefused);
         }
 
+        // Only someone who knows the password learns the account is switched off.
+        if (!user.IsActive)
+        {
+            Audit("auth.login.deactivated", user, ipAddress);
+            throw new UnauthorizedAccessException("This account has been deactivated. Contact the school office.");
+        }
+
+        _challenges.Remove(pauseKey);
         await _users.ResetFailedLoginAsync(user.Id, ct);
 
         if (user.TwoFactorEnabled)
@@ -387,6 +415,9 @@ public class AuthService : IAuthService
 
         if (request.CurrentPassword == request.NewPassword)
             throw new InvalidOperationException("The new password must be different from the current one.");
+
+        var problems = PasswordPolicy.Check(request.NewPassword, user.Username, user.Email, user.FullName, _schoolName);
+        if (problems.Count > 0) throw new InvalidOperationException(string.Join(" ", problems));
 
         await _users.SetPasswordHashAsync(user.Id, _passwordHasher.HashPassword(user, request.NewPassword), ct);
         if (user.MustChangePassword)
