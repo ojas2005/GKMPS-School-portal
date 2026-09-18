@@ -45,9 +45,12 @@ jobs:
           set -euo pipefail
           umask 077
           mkdir -p backup
+          # No --single-transaction: mysqldump pairs it with savepoints, which TiDB rejects.
+          # Each table is still copied consistently, and at 2 a.m. nothing is being written;
+          # the restore check below compares every table's row count with the source anyway.
           common=(--host="$TIDB_HOST" --port="$TIDB_PORT" --user="$TIDB_USER"
                   --ssl-mode=VERIFY_IDENTITY --ssl-ca=/etc/ssl/certs/ca-certificates.crt
-                  --single-transaction --skip-lock-tables --no-tablespaces --set-gtid-purged=OFF
+                  --skip-lock-tables --no-tablespaces --set-gtid-purged=OFF
                   --column-statistics=0 --hex-blob --default-character-set=utf8mb4)
           mysqldump "${common[@]}" --databases $DATABASES > backup/school.sql
 
