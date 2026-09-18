@@ -18,6 +18,10 @@ public static class CallerClaims
     public const string ClassTeacherOfSectionIdClaim = "classTeacherOfSectionId";
     /// <summary>The sign-in session an access token belongs to (see UserSession).</summary>
     public const string SessionIdClaim = "sid";
+    /// <summary>A step the user must finish before using the app ("change-password", "setup-two-factor").</summary>
+    public const string PendingActionClaim = "pending";
+
+    public static string? PendingAction(this ClaimsPrincipal user) => user.FindFirst(PendingActionClaim)?.Value;
 
     public static string? Role(this ClaimsPrincipal user) =>
         user.FindFirst(ClaimTypes.Role)?.Value;

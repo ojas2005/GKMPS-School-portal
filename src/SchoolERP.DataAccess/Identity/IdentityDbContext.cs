@@ -29,6 +29,8 @@ public class IdentityDbContext : DbContext
             entity.Property(u => u.Email).HasMaxLength(256).IsRequired();
             entity.Property(u => u.FullName).HasMaxLength(200).IsRequired();
             entity.Property(u => u.Role).HasMaxLength(50).IsRequired();
+            entity.Property(u => u.TwoFactorSecret).HasMaxLength(256);
+            entity.Property(u => u.TwoFactorRecoveryCodes).HasMaxLength(1024);
             entity.HasQueryFilter(u => !u.IsDeleted);
 
             entity.HasMany(u => u.RefreshTokens)

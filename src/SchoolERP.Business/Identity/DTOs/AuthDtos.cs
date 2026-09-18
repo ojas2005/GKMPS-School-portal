@@ -42,7 +42,19 @@ public record AuthResult(
     string? ClassTeacherOfClassId = null,
     string? ClassTeacherOfSectionId = null,
     // Minutes of inactivity after which the browser should sign the user out.
-    int SessionIdleTimeoutMinutes = 0);
+    int SessionIdleTimeoutMinutes = 0,
+    // Set when the password was right but an authenticator code is still needed: no tokens
+    // are issued yet; send the code with this challenge to /api/auth/login/two-factor.
+    bool TwoFactorRequired = false,
+    string? TwoFactorChallenge = null,
+    // Something the user must do before using the app: "change-password" or
+    // "setup-two-factor". Until then the API accepts only the requests needed to do it.
+    string? PendingAction = null);
+
+/// <summary>What creating an account returns: the new account, never a login for it.</summary>
+public record RegisteredUser(Guid UserId, string Email, string? Username, string FullName, string Role);
+
+public record TwoFactorLoginRequest([Required] string Challenge, [Required] string Code);
 
 public record UserSummary(Guid Id, string Email, string FullName, string Role, bool IsActive, DateTime? LastLoginAtUtc, string? Username = null);
 

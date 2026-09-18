@@ -58,6 +58,9 @@ public static class BusinessServiceCollectionExtensions
         services.AddSingleton(TimeProvider.System);
         services.Configure<SessionOptions>(configuration.GetSection(SessionOptions.SectionName));
         services.AddScoped<ISessionService, SessionService>();
+        services.Configure<SchoolERP.Business.Identity.TwoFactor.SecurityOptions>(configuration.GetSection(SchoolERP.Business.Identity.TwoFactor.SecurityOptions.SectionName));
+        services.AddSingleton<SchoolERP.Business.Identity.TwoFactor.TwoFactorProtector>();
+        services.AddScoped<SchoolERP.Business.Identity.TwoFactor.ITwoFactorService, SchoolERP.Business.Identity.TwoFactor.TwoFactorService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
         // Student

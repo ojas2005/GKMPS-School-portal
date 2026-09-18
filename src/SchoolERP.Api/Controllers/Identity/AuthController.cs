@@ -37,7 +37,7 @@ public class AuthController : ControllerBase
         try
         {
             var result = await _authService.RegisterAsync(request, ct);
-            return Ok(ApiResponse<AuthResult>.Ok(result, "Account created."));
+            return Ok(ApiResponse<RegisteredUser>.Ok(result, "Account created."));
         }
         catch (InvalidOperationException ex)
         {
@@ -53,6 +53,22 @@ public class AuthController : ControllerBase
         {
             var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
             var result = await _authService.LoginAsync(request, ip, ct);
+            return Ok(ApiResponse<AuthResult>.Ok(result, "Login successful."));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
+    [HttpPost("login/two-factor")]
+    [AllowAnonymous]
+    public async Task<IActionResult> LoginTwoFactor([FromBody] TwoFactorLoginRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+            var result = await _authService.CompleteTwoFactorLoginAsync(request, ip, ct);
             return Ok(ApiResponse<AuthResult>.Ok(result, "Login successful."));
         }
         catch (UnauthorizedAccessException ex)

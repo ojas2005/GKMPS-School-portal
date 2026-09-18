@@ -75,7 +75,9 @@ public static class DatabaseInitializer
             FullName = "School Owner",
             Role = RoleNames.SuperAdmin,
             IsEmailVerified = true,
-            IsActive = true
+            IsActive = true,
+            // The seed password sits in configuration (or the logs); the owner replaces it at first sign-in.
+            MustChangePassword = true
         };
         owner.PasswordHash = new PasswordHasher<User>().HashPassword(owner, ownerPassword!);
         db.Users.Add(owner);

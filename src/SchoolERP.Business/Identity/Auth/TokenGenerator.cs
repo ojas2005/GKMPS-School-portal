@@ -14,7 +14,7 @@ public class TokenGenerator : ITokenGenerator
 
     public TokenGenerator(IOptions<JwtOptions> options) => _options = options.Value;
 
-    public string GenerateAccessToken(User user, StudentProfile? studentProfile = null, StaffClaimsProfile? staffProfile = null, Guid? sessionId = null)
+    public string GenerateAccessToken(User user, StudentProfile? studentProfile = null, StaffClaimsProfile? staffProfile = null, Guid? sessionId = null, string? pendingAction = null)
     {
         var claims = new List<Claim>
         {
@@ -29,6 +29,10 @@ public class TokenGenerator : ITokenGenerator
         // an admin action) stops the token working right away, not when it expires.
         if (sessionId is not null)
             claims.Add(new Claim(SchoolERP.Common.CallerClaims.SessionIdClaim, sessionId.Value.ToString()));
+
+        // Marks a token that may only be used to finish a required step (see PendingActionGate).
+        if (pendingAction is not null)
+            claims.Add(new Claim(SchoolERP.Common.CallerClaims.PendingActionClaim, pendingAction));
 
         // Self-service scoping claims: present only for accounts linked to a student
         // record. Downstream services use these to restrict reads to the caller's own data.

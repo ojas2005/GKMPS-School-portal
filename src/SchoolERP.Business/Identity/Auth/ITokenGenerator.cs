@@ -5,7 +5,7 @@ namespace SchoolERP.Business.Identity.Auth;
 
 public interface ITokenGenerator
 {
-    string GenerateAccessToken(User user, StudentProfile? studentProfile = null, StaffClaimsProfile? staffProfile = null, Guid? sessionId = null);
+    string GenerateAccessToken(User user, StudentProfile? studentProfile = null, StaffClaimsProfile? staffProfile = null, Guid? sessionId = null, string? pendingAction = null);
 
     /// <summary>Cryptographically random opaque refresh token (the raw value is only ever returned to the client once; only its hash is persisted).</summary>
     string GenerateRefreshTokenRaw();

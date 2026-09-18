@@ -112,5 +112,25 @@ public class UserRepository : IUserRepository
         await _db.Users.IgnoreQueryFilters().Where(u => u.Id == userId).ExecuteDeleteAsync(ct);
     }
 
+    public Task<int> SetMustChangePasswordAsync(Guid userId, bool mustChange, CancellationToken ct = default) =>
+        _db.Users.Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.MustChangePassword, mustChange), ct);
+
+    public Task<int> SetTwoFactorAsync(Guid userId, string? secret, bool enabled, string? recoveryCodes, CancellationToken ct = default) =>
+        _db.Users.Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(u => u.TwoFactorSecret, secret)
+                .SetProperty(u => u.TwoFactorEnabled, enabled)
+                .SetProperty(u => u.TwoFactorRecoveryCodes, recoveryCodes)
+                .SetProperty(u => u.TwoFactorLastStep, (long?)null), ct);
+
+    public async Task<bool> TryAdvanceTwoFactorStepAsync(Guid userId, long step, CancellationToken ct = default) =>
+        await _db.Users.Where(u => u.Id == userId && (u.TwoFactorLastStep == null || u.TwoFactorLastStep < step))
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.TwoFactorLastStep, step), ct) == 1;
+
+    public async Task<bool> TryReplaceRecoveryCodesAsync(Guid userId, string expected, string? remaining, CancellationToken ct = default) =>
+        await _db.Users.Where(u => u.Id == userId && u.TwoFactorRecoveryCodes == expected)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.TwoFactorRecoveryCodes, remaining), ct) == 1;
+
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }

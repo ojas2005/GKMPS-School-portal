@@ -4,6 +4,8 @@ using Microsoft.Extensions.Options;
 using SchoolERP.Business.Identity.Auth;
 using SchoolERP.Business.Identity.DTOs;
 using SchoolERP.Business.Identity.Sessions;
+using SchoolERP.Business.Identity.TwoFactor;
+using Microsoft.Extensions.Caching.Memory;
 using SchoolERP.DataAccess.Identity.Entities;
 using SchoolERP.DataAccess.Identity.Repositories.Interfaces;
 using SchoolERP.Business.Identity.Services.Interfaces;
@@ -24,6 +26,8 @@ public class AuthService : IAuthService
     private readonly IRefreshTokenRepository _refreshTokens;
     private readonly ISessionService _sessions;
     private readonly IAuditTrail _audit;
+    private readonly ITwoFactorService _twoFactor;
+    private readonly IMemoryCache _challenges;
     private readonly ITokenGenerator _tokenGenerator;
     private readonly PasswordHasher<User> _passwordHasher = new();
     private readonly IEventPublisher _events;
@@ -39,6 +43,8 @@ public class AuthService : IAuthService
         IRefreshTokenRepository refreshTokens,
         ISessionService sessions,
         IAuditTrail audit,
+        ITwoFactorService twoFactor,
+        IMemoryCache challenges,
         ITokenGenerator tokenGenerator,
         IEventPublisher events,
         StudentProfileResolver studentProfiles,
@@ -51,6 +57,8 @@ public class AuthService : IAuthService
         _refreshTokens = refreshTokens;
         _sessions = sessions;
         _audit = audit;
+        _twoFactor = twoFactor;
+        _challenges = challenges;
         _tokenGenerator = tokenGenerator;
         _events = events;
         _studentProfiles = studentProfiles;
@@ -81,7 +89,7 @@ public class AuthService : IAuthService
             ? await _staffProfiles.ResolveByUserAsync(user.Id, ct)
             : null;
 
-    public async Task<AuthResult> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
+    public async Task<RegisteredUser> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
     {
         // Duplicate-prevention guard before insert, mirroring HasStudentReviewed()-style checks.
         if (await _users.ExistsByEmailAsync(request.Email, ct))
@@ -101,7 +109,10 @@ public class AuthService : IAuthService
             FullName = request.FullName,
             Role = request.Role,
             IsEmailVerified = false,
-            IsActive = true
+            IsActive = true,
+            // Whoever created the account knows this password, so the owner of the account
+            // picks their own at first sign-in.
+            MustChangePassword = true
         };
         user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
 
@@ -119,7 +130,9 @@ public class AuthService : IAuthService
         _logger.LogInformation("New account registered: {UserId} ({Role})", user.Id, user.Role);
         Audit("user.created", user, null, $"role={user.Role}");
 
-        return await IssueTokensAsync(user, ipAddress: null, ct);
+        // Only the new account's details -- handing its tokens to the admin who created it
+        // would let them act as that user without ever knowing their password.
+        return new RegisteredUser(user.Id, user.Email, user.Username, user.FullName, user.Role);
     }
 
     public async Task<AuthResult> LoginAsync(LoginRequest request, string? ipAddress, CancellationToken ct = default)
@@ -174,11 +187,62 @@ public class AuthService : IAuthService
         }
 
         await _users.ResetFailedLoginAsync(user.Id, ct);
+
+        if (user.TwoFactorEnabled)
+        {
+            // Password is right; the authenticator code comes next. The challenge proves the
+            // first step was passed and expires in five minutes.
+            var challenge = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
+            _challenges.Set(ChallengeKey(challenge), new TwoFactorChallengeState(user.Id), TimeSpan.FromMinutes(5));
+            Audit("auth.login.password-ok", user, ipAddress, "waiting for two-step code");
+            return new AuthResult("", "", DateTime.UtcNow, user.Id, "", "", "", TwoFactorRequired: true, TwoFactorChallenge: challenge);
+        }
+
         await _users.UpdateLastLoginAsync(user.Id, DateTime.UtcNow, ct);
         Audit("auth.login", user, ipAddress);
 
         return await IssueTokensAsync(user, ipAddress, ct);
     }
+
+    public async Task<AuthResult> CompleteTwoFactorLoginAsync(TwoFactorLoginRequest request, string? ipAddress, CancellationToken ct = default)
+    {
+        if (!_challenges.TryGetValue(ChallengeKey(request.Challenge), out TwoFactorChallengeState? state) || state is null)
+            throw new UnauthorizedAccessException("This sign-in has expired. Enter your password again.");
+
+        var user = await _users.FindByIdAsync(state.UserId, ct);
+        if (user is null || !user.IsActive)
+            throw new UnauthorizedAccessException("Invalid login ID or password.");
+
+        if (!await _twoFactor.VerifyAsync(user, request.Code, ct))
+        {
+            // Five wrong codes and the password has to be entered again.
+            state.Attempts++;
+            if (state.Attempts >= 5) _challenges.Remove(ChallengeKey(request.Challenge));
+            Audit("auth.login.two-factor-failed", user, ipAddress, $"attempt={state.Attempts}");
+            throw new UnauthorizedAccessException(state.Attempts >= 5
+                ? "Too many wrong codes. Enter your password again."
+                : "That code isn't right. Try the newest code from your app.");
+        }
+
+        _challenges.Remove(ChallengeKey(request.Challenge));
+        await _users.UpdateLastLoginAsync(user.Id, DateTime.UtcNow, ct);
+        Audit("auth.login", user, ipAddress, "with two-step code");
+        return await IssueTokensAsync(user, ipAddress, ct);
+    }
+
+    private sealed class TwoFactorChallengeState(Guid userId)
+    {
+        public Guid UserId { get; } = userId;
+        public int Attempts { get; set; }
+    }
+
+    private static string ChallengeKey(string challenge) => $"2fa-challenge:{challenge}";
+
+    /// <summary>What the user must do before they may use the app, if anything.</summary>
+    private string? PendingActionFor(User user) =>
+        user.MustChangePassword ? "change-password"
+        : _twoFactor.IsRequiredFor(user.Role) && !user.TwoFactorEnabled ? "setup-two-factor"
+        : null;
 
     public async Task<AuthResult> RefreshAsync(RefreshRequest request, string? ipAddress, CancellationToken ct = default)
     {
@@ -257,7 +321,8 @@ public class AuthService : IAuthService
 
         var profile = await ResolveStudentProfileAsync(user, ct);
         var staffProfile = await ResolveStaffProfileAsync(user, ct);
-        var newAccessToken = _tokenGenerator.GenerateAccessToken(user, profile, staffProfile, session.Id);
+        var pending = PendingActionFor(user);
+        var newAccessToken = _tokenGenerator.GenerateAccessToken(user, profile, staffProfile, session.Id, pending);
         var newTokenEntity = new SchoolERP.DataAccess.Identity.Entities.RefreshToken
         {
             UserId = user.Id,
@@ -285,7 +350,8 @@ public class AuthService : IAuthService
             staffProfile?.StaffId,
             staffProfile?.ClassTeacherOfClassId,
             staffProfile?.ClassTeacherOfSectionId,
-            _sessions.IdleTimeoutMinutes);
+            _sessions.IdleTimeoutMinutes,
+            PendingAction: pending);
     }
 
     // Possession of the raw refresh token is the proof of ownership here -- no access token
@@ -323,6 +389,11 @@ public class AuthService : IAuthService
             throw new InvalidOperationException("The new password must be different from the current one.");
 
         await _users.SetPasswordHashAsync(user.Id, _passwordHasher.HashPassword(user, request.NewPassword), ct);
+        if (user.MustChangePassword)
+        {
+            await _users.SetMustChangePasswordAsync(user.Id, false, ct);
+            user.MustChangePassword = false;
+        }
 
         // Sign out every other session, then hand this one a fresh token pair.
         await _refreshTokens.RevokeAllForUserAsync(user.Id, ct);
@@ -340,7 +411,8 @@ public class AuthService : IAuthService
 
         var profile = await ResolveStudentProfileAsync(user, ct);
         var staffProfile = await ResolveStaffProfileAsync(user, ct);
-        var accessToken = _tokenGenerator.GenerateAccessToken(user, profile, staffProfile, session.Id);
+        var pending = PendingActionFor(user);
+        var accessToken = _tokenGenerator.GenerateAccessToken(user, profile, staffProfile, session.Id, pending);
         var rawRefreshToken = _tokenGenerator.GenerateRefreshTokenRaw();
         var tokenHash = _tokenGenerator.HashToken(rawRefreshToken);
 
@@ -371,7 +443,8 @@ public class AuthService : IAuthService
             staffProfile?.StaffId,
             staffProfile?.ClassTeacherOfClassId,
             staffProfile?.ClassTeacherOfSectionId,
-            _sessions.IdleTimeoutMinutes);
+            _sessions.IdleTimeoutMinutes,
+            PendingAction: pending);
     }
 
     private static DateTime Min(DateTime a, DateTime b) => a < b ? a : b;

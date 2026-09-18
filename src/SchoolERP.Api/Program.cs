@@ -160,6 +160,7 @@ app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
 app.UseRequestAudit();
+app.UsePendingActionGate();
 
 app.MapControllers();
 

@@ -15,5 +15,6 @@ public interface IUserService
 
     /// <summary>Hard-deletes an account that has never signed in -- used to roll back an
     /// onboarding whose profile-creation step failed after the login was created.</summary>
+    Task ResetTwoFactorAsync(Guid userId, string actorUserId, string actorRole, CancellationToken ct = default);
     Task DeleteUnusedAsync(Guid userId, string actorUserId, string actorRole, CancellationToken ct = default);
 }

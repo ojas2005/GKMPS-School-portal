@@ -16,15 +16,17 @@ public class UserService : IUserService
     private readonly IRefreshTokenRepository _refreshTokens;
     private readonly ISessionService _sessions;
     private readonly SchoolERP.Common.Audit.IAuditTrail _audit;
+    private readonly SchoolERP.Business.Identity.TwoFactor.ITwoFactorService _twoFactor;
     private readonly PasswordHasher<User> _passwordHasher = new();
     private readonly ILogger<UserService> _logger;
 
-    public UserService(IUserRepository users, IRefreshTokenRepository refreshTokens, ISessionService sessions, SchoolERP.Common.Audit.IAuditTrail audit, ILogger<UserService> logger)
+    public UserService(IUserRepository users, IRefreshTokenRepository refreshTokens, ISessionService sessions, SchoolERP.Common.Audit.IAuditTrail audit, SchoolERP.Business.Identity.TwoFactor.ITwoFactorService twoFactor, ILogger<UserService> logger)
     {
         _users = users;
         _refreshTokens = refreshTokens;
         _sessions = sessions;
         _audit = audit;
+        _twoFactor = twoFactor;
         _logger = logger;
     }
 
@@ -94,6 +96,8 @@ public class UserService : IUserService
         // survive an admin-initiated reset.
         await _refreshTokens.RevokeAllForUserAsync(userId, ct);
         await _sessions.EndAllForUserAsync(userId, SessionEndReasons.PasswordReset, ct);
+        // The admin knows this password now, so the user picks their own at next sign-in.
+        await _users.SetMustChangePasswordAsync(userId, true, ct);
 
         _audit.Record(new SchoolERP.Common.Audit.AuditRecord(DateTime.UtcNow, "user.password.reset",
             Guid.TryParse(actorUserId, out var actorR) ? actorR : null, actorRole, userId.ToString()));
@@ -102,6 +106,20 @@ public class UserService : IUserService
         _logger.LogInformation(
             "AUDIT actor={ActorUserId} role={ActorRole} action=User.PasswordReset entity=User entityId={UserId}",
             actorUserId, actorRole, userId);
+    }
+
+    public async Task ResetTwoFactorAsync(Guid userId, string actorUserId, string actorRole, CancellationToken ct = default)
+    {
+        var user = await _users.FindByIdAsync(userId, ct)
+            ?? throw new KeyNotFoundException("User not found.");
+        EnsureCanManage(actorRole, user);
+
+        await _twoFactor.ResetAsync(userId, ct);
+        // Whoever holds the lost phone mustn't still be signed in.
+        await _refreshTokens.RevokeAllForUserAsync(userId, ct);
+        await _sessions.EndAllForUserAsync(userId, SessionEndReasons.PasswordReset, ct);
+        _audit.Record(new SchoolERP.Common.Audit.AuditRecord(DateTime.UtcNow, "user.two-factor.reset",
+            Guid.TryParse(actorUserId, out var actor) ? actor : null, actorRole, userId.ToString()));
     }
 
     public async Task DeleteUnusedAsync(Guid userId, string actorUserId, string actorRole, CancellationToken ct = default)

@@ -74,6 +74,23 @@ public class UsersController : ControllerBase
     // mirrors how accounts are created in the first place: the owner chooses credentials
     // and hands them to the person. Passwords are one-way hashed, so there is no "view"
     // equivalent -- only reset.
+    // When someone loses the phone with their authenticator app: clears it and signs them out
+    // everywhere; they set it up again at next sign-in.
+    [HttpPost("{id:guid}/two-factor/reset")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin}")]
+    public async Task<IActionResult> ResetTwoFactor(Guid id, CancellationToken ct)
+    {
+        var actorUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? "unknown";
+        var actorRole = User.FindFirstValue(ClaimTypes.Role) ?? "unknown";
+        try
+        {
+            await _userService.ResetTwoFactorAsync(id, actorUserId, actorRole, ct);
+            return Ok(ApiResponse<object>.Ok(new { }, "Two-step sign-in reset. They'll set it up again at next sign-in."));
+        }
+        catch (KeyNotFoundException ex) { return NotFound(ApiResponse<object>.Fail(ex.Message)); }
+        catch (UnauthorizedAccessException ex) { return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message)); }
+    }
+
     [HttpPatch("{id:guid}/password")]
     [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin}")]
     public async Task<IActionResult> SetPassword(Guid id, [FromBody] SetPasswordRequest request, CancellationToken ct)

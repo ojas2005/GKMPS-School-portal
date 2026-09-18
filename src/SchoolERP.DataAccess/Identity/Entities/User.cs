@@ -40,5 +40,19 @@ public class User : BaseEntity
     /// <summary>Id of the linked profile in the owning module's database (StudentId, StaffId, ...). Not an EF navigation -- each module has its own database, so it is looked up through that module, never joined.</summary>
     public Guid? LinkedProfileId { get; set; }
 
+    /// <summary>
+    /// Set when someone else chose this password (an admin creating or resetting the
+    /// account, or the owner seed): the user must pick their own before using the app.
+    /// </summary>
+    public bool MustChangePassword { get; set; }
+
+    /// <summary>Authenticator-app secret, encrypted (see TwoFactorProtector). Set during setup, before it's enabled.</summary>
+    public string? TwoFactorSecret { get; set; }
+    public bool TwoFactorEnabled { get; set; }
+    /// <summary>The last time-step a code was accepted for -- each code works once.</summary>
+    public long? TwoFactorLastStep { get; set; }
+    /// <summary>SHA-256 hashes of the unused recovery codes, ';'-separated.</summary>
+    public string? TwoFactorRecoveryCodes { get; set; }
+
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
 }

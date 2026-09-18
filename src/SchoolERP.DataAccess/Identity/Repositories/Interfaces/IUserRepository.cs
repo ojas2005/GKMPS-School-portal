@@ -38,5 +38,16 @@ public interface IUserRepository
     /// the email/login ID can be reused).</summary>
     Task HardDeleteAsync(Guid userId, CancellationToken ct = default);
 
+    Task<int> SetMustChangePasswordAsync(Guid userId, bool mustChange, CancellationToken ct = default);
+
+    /// <summary>Stores (or clears, with nulls) the two-step sign-in secret, state and recovery codes.</summary>
+    Task<int> SetTwoFactorAsync(Guid userId, string? secret, bool enabled, string? recoveryCodes, CancellationToken ct = default);
+
+    /// <summary>Records an accepted code's time-step, only if newer than the last one -- false means the code was already used.</summary>
+    Task<bool> TryAdvanceTwoFactorStepAsync(Guid userId, long step, CancellationToken ct = default);
+
+    /// <summary>Replaces the recovery codes only if they still equal <paramref name="expected"/> -- false means one was used concurrently.</summary>
+    Task<bool> TryReplaceRecoveryCodesAsync(Guid userId, string expected, string? remaining, CancellationToken ct = default);
+
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }
