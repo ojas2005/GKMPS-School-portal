@@ -141,7 +141,7 @@ Set up to run at no cost: every piece is on a free tier or inside a free monthly
 | Frontend | Azure Static Web Apps `gkmps-portal` (Free, East Asia) |
 | Database | TiDB Cloud Starter (AWS Tokyo), free tier |
 | Files | The `files` database on the same TiDB server |
-| Logs | Container console output only — the environment doesn't ship logs to a paid Log Analytics workspace |
+| Logs | Log Analytics workspace capped at 0.1 GB/day with 30-day retention, which stays inside the free 5 GB a month (this express environment won't provision app updates without a workspace) |
 
 Secrets (database, JWT key, owner seed password) are Container Apps secrets, not image or repo
 contents. To deploy a commit, push it, wait for the **Backend CI** run to publish its image, then:
