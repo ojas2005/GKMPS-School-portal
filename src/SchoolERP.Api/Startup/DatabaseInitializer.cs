@@ -18,15 +18,39 @@ public static class DatabaseInitializer
     public static void Initialize(WebApplication app)
     {
         using var scope = app.Services.CreateScope();
+        var contexts = DataAccessServiceCollectionExtensions.Modules
+            .ToDictionary(m => m.Database, m => (DbContext)scope.ServiceProvider.GetRequiredService(m.ContextType));
 
-        foreach (var (contextType, database) in DataAccessServiceCollectionExtensions.Modules)
+        foreach (var database in DatabasesToMigrate(app, contexts))
         {
-            var db = (DbContext)scope.ServiceProvider.GetRequiredService(contextType);
+            var db = contexts[database];
             SharedHosting.MigrateWithRetry(() => db.Database.Migrate(), app.Logger);
             app.Logger.LogInformation("Database '{Database}' is up to date", database);
         }
 
         SeedOwner(app, scope.ServiceProvider.GetRequiredService<IdentityDbContext>());
+    }
+
+    // Every startup -- including each wake from scale-to-zero -- used to run Migrate() on all
+    // 13 databases, about a second each even with nothing to apply. One history query answers
+    // "is anything pending?" instead; only databases that need it go through Migrate(). If the
+    // quick check can't run (first deploy, a database still starting), everything takes the
+    // full path as before, which creates, retries and migrates.
+    private static IReadOnlyCollection<string> DatabasesToMigrate(WebApplication app, IReadOnlyDictionary<string, DbContext> contexts)
+    {
+        var expected = contexts.ToDictionary(c => c.Key, c => (IReadOnlyCollection<string>)c.Value.Database.GetMigrations().ToList());
+        try
+        {
+            var applied = MigrationCheck.ReadAppliedMigrations(app.Configuration, contexts.Keys);
+            var pending = MigrationCheck.DatabasesWithPendingMigrations(expected, applied);
+            app.Logger.LogInformation("Checked {Count} databases in one query; {Pending} need migrating", contexts.Count, pending.Count);
+            return DataAccessServiceCollectionExtensions.Modules.Select(m => m.Database).Where(pending.Contains).ToList();
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogInformation("Quick migration check unavailable ({Reason}); checking each database", ex.Message);
+            return DataAccessServiceCollectionExtensions.Modules.Select(m => m.Database).ToList();
+        }
     }
 
     // Registration is closed to the public, so the owner (SuperAdmin) is the bootstrap identity
