@@ -21,6 +21,14 @@ using SchoolERP.DataAccess.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// No uploads anywhere in the API, so requests stay small: a 20 MB body sent to the (anonymous)
+// sign-in endpoint used to be parsed for seconds. And don't advertise the server software.
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 1 * 1024 * 1024;
+    options.AddServerHeader = false;
+});
+
 builder.Host.UseSerilog(SharedLogging.Configure("SchoolERP.Api"));
 
 // ---------- Business + data access tiers ----------
@@ -112,7 +120,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 // ---------- Controllers + Swagger ----------
-builder.Services.AddControllers();
+builder.Services.AddControllers(options => options.Filters.Add<PagingLimitsFilter>());
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {

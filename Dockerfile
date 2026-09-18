@@ -16,7 +16,8 @@ COPY src/SchoolERP.Api/SchoolERP.Api.csproj src/SchoolERP.Api/
 RUN dotnet restore src/SchoolERP.Api/SchoolERP.Api.csproj -a $TARGETARCH
 
 COPY src/ src/
-RUN dotnet publish src/SchoolERP.Api/SchoolERP.Api.csproj -c Release -a $TARGETARCH -o /app/publish --no-restore
+# No debug-symbol (.pdb) files in the published image.
+RUN dotnet publish src/SchoolERP.Api/SchoolERP.Api.csproj -c Release -a $TARGETARCH -o /app/publish --no-restore -p:DebugType=None -p:DebugSymbols=false
 
 # ---------- Runtime stage ----------
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final

@@ -21,6 +21,18 @@ public class GlobalExceptionHandler : IExceptionHandler
 
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
+        // A malformed or oversized request is the client's problem, not a crash: answer with
+        // its own status (400, 413...) and don't log it as a server error.
+        if (exception is BadHttpRequestException badRequest)
+        {
+            httpContext.Response.ContentType = "application/json";
+            httpContext.Response.StatusCode = badRequest.StatusCode;
+            await httpContext.Response.WriteAsJsonAsync(ApiResponse<object>.Fail(
+                badRequest.StatusCode == StatusCodes.Status413PayloadTooLarge ? "The request is too large." : "The request could not be read."),
+                cancellationToken);
+            return true;
+        }
+
         _logger.LogError(exception, "Unhandled exception on {Method} {Path}", httpContext.Request.Method, httpContext.Request.Path);
 
         httpContext.Response.ContentType = "application/json";

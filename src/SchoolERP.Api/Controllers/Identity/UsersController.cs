@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SchoolERP.Business.Identity.DTOs;
@@ -46,7 +47,7 @@ public class UsersController : ControllerBase
 
     [HttpPatch("{id:guid}/status")]
     [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin}")]
-    public async Task<IActionResult> SetActiveStatus(Guid id, [FromQuery] bool isActive, CancellationToken ct)
+    public async Task<IActionResult> SetActiveStatus(Guid id, [FromQuery, BindRequired] bool isActive, CancellationToken ct)
     {
         var actorUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? "unknown";
         var actorRole = User.FindFirstValue(ClaimTypes.Role) ?? "unknown";
