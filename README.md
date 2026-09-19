@@ -84,7 +84,7 @@ Student and Fee services), never each other's tables.
 
 ## Getting started
 
-Requires the .NET 9 SDK and Docker.
+Requires the .NET 10 SDK and Docker.
 
 ```bash
 # configure environment

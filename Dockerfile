@@ -4,7 +4,7 @@
 # ---------- Build stage ----------
 # Runs on the build machine's own architecture and cross-compiles for the target, so building
 # an amd64 image on an Apple Silicon Mac doesn't run the .NET SDK under emulation.
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
 WORKDIR /src
 
@@ -20,7 +20,7 @@ COPY src/ src/
 RUN dotnet publish src/SchoolERP.Api/SchoolERP.Api.csproj -c Release -a $TARGETARCH -o /app/publish --no-restore -p:DebugType=None -p:DebugSymbols=false
 
 # ---------- Runtime stage ----------
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
