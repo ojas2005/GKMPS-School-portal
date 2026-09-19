@@ -1,0 +1,22 @@
+# Monthly update PRs, grouped so they arrive as one PR per ecosystem. Security fixes are raised
+# separately and straight away (Dependabot security updates are on for this repository).
+version: 2
+updates:
+  - package-ecosystem: github-actions   # the workflows pin actions to commit SHAs
+    directory: /
+    schedule: { interval: monthly }
+    groups: { actions: { patterns: ["*"] } }
+  - package-ecosystem: nuget
+    directory: /
+    schedule: { interval: monthly }
+    groups: { nuget: { patterns: ["*"], update-types: [minor, patch] } }
+    ignore:
+      # Pomelo (the MySQL provider) supports only EF Core 9 -- move all of EF together when
+      # Pomelo publishes its EF Core 10 release.
+      - dependency-name: "Microsoft.EntityFrameworkCore*"
+        update-types: [version-update:semver-major]
+      - dependency-name: "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore"
+        update-types: [version-update:semver-major]
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: monthly }
