@@ -87,16 +87,19 @@ public class TwoFactorTests
         public Task<int> ResetFailedLoginAsync(Guid userId, CancellationToken ct = default) => throw new NotImplementedException();
         public Task HardDeleteAsync(Guid userId, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<int> SetMustChangePasswordAsync(Guid userId, bool mustChange, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<int> AnonymizeAsync(Guid userId, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<int> SaveChangesAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
 
     private sealed class NoAudit : IAuditTrail { public void Record(AuditRecord record) { } }
 
-    private static (TwoFactorService Service, FakeUsers Users) Create(params string[] requiredRoles)
+    private static (TwoFactorService Service, FakeUsers Users) Create(params string[] requiredRoles) =>
+        Create(new FakeUsers(), "0123456789abcdef0123456789abcdef", requiredRoles);
+
+    private static (TwoFactorService Service, FakeUsers Users) Create(FakeUsers users, string jwtKey, params string[] requiredRoles)
     {
-        var users = new FakeUsers();
-        users.User.PasswordHash = new PasswordHasher<User>().HashPassword(users.User, "correct horse battery");
-        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Jwt:SigningKey"] = "0123456789abcdef0123456789abcdef", ["School:Name"] = "GKMPS" }).Build();
+        users.User.PasswordHash ??= new PasswordHasher<User>().HashPassword(users.User, "correct horse battery");
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Jwt:SigningKey"] = jwtKey, ["School:Name"] = "GKMPS" }).Build();
         var service = new TwoFactorService(users, new TwoFactorProtector(config), new NoAudit(), TimeProvider.System,
             Options.Create(new SecurityOptions { RequireTwoFactorForRoles = requiredRoles }), config);
         return (service, users);
@@ -144,6 +147,33 @@ public class TwoFactorTests
         Assert.True(await twoFactor.VerifyAsync(users.User, codes[3].ToLowerInvariant().Replace("-", " ")));
         Assert.False(await twoFactor.VerifyAsync(users.User, codes[3]));
         Assert.Equal(9, (await twoFactor.GetStatusAsync(users.User.Id)).RecoveryCodesLeft);
+    }
+
+    [Fact]
+    public async Task After_the_signing_key_changes_recovery_codes_still_sign_in()
+    {
+        var (twoFactor, users) = Create();
+        var setup = await twoFactor.BeginSetupAsync(users.User.Id);
+        var codes = await twoFactor.EnableAsync(users.User.Id, CurrentCode(setup));
+
+        // The JWT signing key was rotated after an incident, with no separate two-step key set.
+        var (rotated, _) = Create(users, "a-brand-new-signing-key-after-an-incident");
+
+        Assert.False(await rotated.VerifyAsync(users.User, CurrentCode(setup)));   // no crash, just no match
+        Assert.True(await rotated.VerifyAsync(users.User, codes[0]));
+    }
+
+    [Fact]
+    public void A_dedicated_two_factor_key_survives_signing_key_rotation()
+    {
+        TwoFactorProtector With(string jwt) => new(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            { ["Jwt:SigningKey"] = jwt, ["TwoFactor:EncryptionKey"] = "a-separate-key-kept-just-for-two-step-secrets" }).Build());
+        var secret = Totp.NewSecret();
+
+        var stored = With("the-old-signing-key-0123456789abcdef").Protect(secret);
+
+        Assert.Equal(secret, With("the-new-signing-key-0123456789abcdef").TryUnprotect(stored));
+        Assert.Null(Protector().TryUnprotect(stored));
     }
 
     [Fact]

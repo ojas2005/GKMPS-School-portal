@@ -67,6 +67,24 @@ public class StudentRepository : IStudentRepository
                 .SetProperty(s => s.SectionId, sectionId)
                 .SetProperty(s => s.UpdatedAtUtc, DateTime.UtcNow), ct);
 
+    public Task<int> AnonymizeAsync(Guid studentId, CancellationToken ct = default) =>
+        _db.Students
+            .Where(s => s.Id == studentId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(s => s.FullName, s => "Former student " + s.AdmissionNumber)
+                .SetProperty(s => s.DateOfBirth, new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc))
+                .SetProperty(s => s.Gender, "Not recorded")
+                .SetProperty(s => s.ParentName, (string?)null)
+                .SetProperty(s => s.ParentEmail, (string?)null)
+                .SetProperty(s => s.ParentPhone, (string?)null)
+                .SetProperty(s => s.Address, (string?)null)
+                .SetProperty(s => s.ParentUserId, (Guid?)null)
+                .SetProperty(s => s.Status, StudentStatuses.Erased)
+                .SetProperty(s => s.UpdatedAtUtc, DateTime.UtcNow), ct);
+
+    public Task<int> CountOtherChildrenOfParentAsync(Guid parentUserId, Guid exceptStudentId, CancellationToken ct = default) =>
+        _db.Students.CountAsync(s => s.ParentUserId == parentUserId && s.Id != exceptStudentId && s.Status != StudentStatuses.Erased, ct);
+
     public Task<int> UpdateStatusAsync(Guid studentId, string status, DateTime? transferredOutAtUtc, CancellationToken ct = default) =>
         _db.Students
             .Where(s => s.Id == studentId)

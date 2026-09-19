@@ -31,5 +31,11 @@ public class NotificationLogRepository : INotificationLogRepository
         _db.NotificationLogs.Where(n => n.Id == id)
             .ExecuteUpdateAsync(setters => setters.SetProperty(n => n.FailureReason, reason), ct);
 
+    public Task<int> DeleteForRecipientsAsync(IReadOnlyCollection<string> recipientReferences, CancellationToken ct = default) =>
+        _db.NotificationLogs.Where(l => recipientReferences.Contains(l.RecipientReference)).ExecuteDeleteAsync(ct);
+
+    public Task<int> DeleteOlderThanAsync(DateTime cutoffUtc, CancellationToken ct = default) =>
+        _db.NotificationLogs.IgnoreQueryFilters().Where(n => n.CreatedAtUtc < cutoffUtc).ExecuteDeleteAsync(ct);
+
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }

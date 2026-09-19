@@ -14,4 +14,7 @@ public interface IBlobStorageService
 
     /// <summary>Whether the file is still there -- a cached path can outlive its file after a storage switch.</summary>
     Task<bool> ExistsAsync(string containerName, string blobPath, CancellationToken ct = default);
+
+    /// <summary>Deletes every file whose path starts with <paramref name="prefix"/> (e.g. one student's folder).</summary>
+    Task<int> DeleteByPrefixAsync(string containerName, string prefix, CancellationToken ct = default);
 }

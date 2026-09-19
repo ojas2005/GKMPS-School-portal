@@ -22,6 +22,12 @@ public interface IStudentRepository
     Task<int> ReassignClassSectionAsync(Guid studentId, string classId, string sectionId, CancellationToken ct = default);
 
     /// <summary>Atomic status transition (Active -> TransferredOut/Graduated/Suspended).</summary>
+    /// <summary>Replaces everything that identifies the student with neutral values; the record itself (and its id) stays.</summary>
+    Task<int> AnonymizeAsync(Guid studentId, CancellationToken ct = default);
+
+    /// <summary>Other not-erased students this parent login is linked to.</summary>
+    Task<int> CountOtherChildrenOfParentAsync(Guid parentUserId, Guid exceptStudentId, CancellationToken ct = default);
+
     Task<int> UpdateStatusAsync(Guid studentId, string status, DateTime? transferredOutAtUtc, CancellationToken ct = default);
 
     /// <summary>Aggregate: total active admissions per class, computed in the database via GroupBy/Count, never pulled into memory.</summary>

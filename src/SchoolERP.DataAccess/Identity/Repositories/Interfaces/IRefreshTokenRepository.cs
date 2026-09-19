@@ -22,5 +22,8 @@ public interface IRefreshTokenRepository
     /// <summary>Revokes every active token for a user (used on password change / suspicious activity).</summary>
     Task<int> RevokeAllForUserAsync(Guid userId, CancellationToken ct = default);
 
+    /// <summary>Deletes tokens that expired or were revoked before the cut-off (retention clean-up).</summary>
+    Task<int> DeleteFinishedBeforeAsync(DateTime cutoffUtc, CancellationToken ct = default);
+
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }

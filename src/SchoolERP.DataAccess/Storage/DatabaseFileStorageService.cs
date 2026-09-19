@@ -54,6 +54,9 @@ public class DatabaseFileStorageService : IBlobStorageService, IFileStoreReader
     public Task<bool> ExistsAsync(string containerName, string blobPath, CancellationToken ct = default) =>
         _db.Files.AnyAsync(f => f.Container == containerName && f.Path == blobPath, ct);
 
+    public Task<int> DeleteByPrefixAsync(string containerName, string prefix, CancellationToken ct = default) =>
+        _db.Files.Where(f => f.Container == containerName && f.Path.StartsWith(prefix)).ExecuteDeleteAsync(ct);
+
     public async Task<StoredFileContent?> ReadAsync(string containerName, string path, CancellationToken ct = default)
     {
         var file = await _db.Files.AsNoTracking()

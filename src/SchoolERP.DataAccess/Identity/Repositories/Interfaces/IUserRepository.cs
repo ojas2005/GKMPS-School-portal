@@ -49,5 +49,8 @@ public interface IUserRepository
     /// <summary>Replaces the recovery codes only if they still equal <paramref name="expected"/> -- false means one was used concurrently.</summary>
     Task<bool> TryReplaceRecoveryCodesAsync(Guid userId, string expected, string? remaining, CancellationToken ct = default);
 
+    /// <summary>Removes the person from the account: name, email, login ID, password, second factor; switched off for good.</summary>
+    Task<int> AnonymizeAsync(Guid userId, CancellationToken ct = default);
+
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }

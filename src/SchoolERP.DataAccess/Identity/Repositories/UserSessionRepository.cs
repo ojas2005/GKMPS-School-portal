@@ -35,5 +35,12 @@ public class UserSessionRepository : IUserSessionRepository
                 .SetProperty(s => s.EndedAtUtc, DateTime.UtcNow)
                 .SetProperty(s => s.EndReason, reason), ct);
 
+    public async Task<int> DeleteFinishedBeforeAsync(DateTime cutoffUtc, CancellationToken ct = default)
+    {
+        var finished = _db.UserSessions.Where(s => s.ExpiresAtUtc < cutoffUtc || (s.EndedAtUtc != null && s.EndedAtUtc < cutoffUtc));
+        await _db.RefreshTokens.Where(rt => rt.SessionId != null && finished.Select(s => s.Id).Contains(rt.SessionId.Value)).ExecuteDeleteAsync(ct);
+        return await finished.ExecuteDeleteAsync(ct);
+    }
+
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }

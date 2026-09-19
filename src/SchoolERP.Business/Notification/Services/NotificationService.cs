@@ -24,6 +24,9 @@ public class NotificationService : INotificationService
         _logger = logger;
     }
 
+    public Task<int> ForgetRecipientsAsync(IReadOnlyCollection<string> recipientReferences, CancellationToken ct = default) =>
+        recipientReferences.Count == 0 ? Task.FromResult(0) : _logs.DeleteForRecipientsAsync(recipientReferences, ct);
+
     public async Task DispatchAsync(string eventType, string recipientReference, string channel, string subjectOrTitle, string body, object payload, CancellationToken ct = default)
     {
         var log = new NotificationLog

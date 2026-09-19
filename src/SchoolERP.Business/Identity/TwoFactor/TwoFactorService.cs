@@ -83,7 +83,9 @@ public class TwoFactorService : ITwoFactorService
         if (user.TwoFactorEnabled) throw new InvalidOperationException("Two-step sign-in is already on.");
         if (user.TwoFactorSecret is null) throw new InvalidOperationException("Start the setup first.");
 
-        var step = Totp.Match(_protector.Unprotect(user.TwoFactorSecret), code, _clock.GetUtcNow());
+        var secret = _protector.TryUnprotect(user.TwoFactorSecret)
+            ?? throw new InvalidOperationException("This setup has expired. Start it again to get a new QR code.");
+        var step = Totp.Match(secret, code, _clock.GetUtcNow());
         if (step is null) throw new InvalidOperationException("That code isn't right. Check your phone's time is correct and try the newest code.");
 
         var codes = Enumerable.Range(0, RecoveryCodeCount).Select(_ => NewRecoveryCode()).ToList();
@@ -112,7 +114,10 @@ public class TwoFactorService : ITwoFactorService
     {
         if (!user.TwoFactorEnabled || user.TwoFactorSecret is null) return false;
 
-        var step = Totp.Match(_protector.Unprotect(user.TwoFactorSecret), code, _clock.GetUtcNow());
+        // A secret that can't be decrypted (the key changed) matches no app code; the printed
+        // recovery codes still work, and the user then sets up their phone again.
+        var secret = _protector.TryUnprotect(user.TwoFactorSecret);
+        var step = secret is null ? null : Totp.Match(secret, code, _clock.GetUtcNow());
         if (step is not null)
             return await _users.TryAdvanceTwoFactorStepAsync(user.Id, step.Value, ct); // false: code already used
 

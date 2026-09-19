@@ -63,6 +63,19 @@ public class AzureBlobStorageService : IBlobStorageService
         return (await blob.ExistsAsync(ct)).Value;
     }
 
+    public async Task<int> DeleteByPrefixAsync(string containerName, string prefix, CancellationToken ct = default)
+    {
+        var container = _blobServiceClient.GetBlobContainerClient(containerName);
+        if (!(await container.ExistsAsync(ct)).Value) return 0;
+        var deleted = 0;
+        await foreach (var blob in container.GetBlobsAsync(prefix: prefix, cancellationToken: ct))
+        {
+            await container.DeleteBlobIfExistsAsync(blob.Name, cancellationToken: ct);
+            deleted++;
+        }
+        return deleted;
+    }
+
     private string RewriteForPublicAccess(Uri sasUri)
     {
         if (string.IsNullOrEmpty(_publicBaseUrl)) return sasUri.ToString();

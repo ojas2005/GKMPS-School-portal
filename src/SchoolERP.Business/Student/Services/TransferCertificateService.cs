@@ -87,6 +87,9 @@ public class TransferCertificateService : ITransferCertificateService
 
         // Step 2 of the two-step workflow -- only Principal/Admin reaches this via [Authorize(Roles=...)] on the controller.
         await _certificates.MarkApprovedAsync(certificateId, approvedByUserId, ct);
+        // An approved transfer certificate means the student has left: they drop out of
+        // active counts and class lists, and their data can later be erased.
+        await _students.UpdateStatusAsync(certificate.StudentId, SchoolERP.DataAccess.Student.Entities.StudentStatuses.TransferredOut, DateTime.UtcNow, ct);
 
         _logger.LogInformation("Transfer certificate approved: {CertificateId} by {ApproverId}", certificateId, approvedByUserId);
 

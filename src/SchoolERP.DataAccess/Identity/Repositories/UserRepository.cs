@@ -132,5 +132,18 @@ public class UserRepository : IUserRepository
         await _db.Users.Where(u => u.Id == userId && u.TwoFactorRecoveryCodes == expected)
             .ExecuteUpdateAsync(s => s.SetProperty(u => u.TwoFactorRecoveryCodes, remaining), ct) == 1;
 
+    public Task<int> AnonymizeAsync(Guid userId, CancellationToken ct = default) =>
+        _db.Users.IgnoreQueryFilters().Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(u => u.FullName, "Former user")
+                .SetProperty(u => u.Email, u => "erased-" + u.Id + "@invalid.local")
+                .SetProperty(u => u.Username, (string?)null)
+                .SetProperty(u => u.PasswordHash, (string?)null)
+                .SetProperty(u => u.IsActive, false)
+                .SetProperty(u => u.TwoFactorSecret, (string?)null)
+                .SetProperty(u => u.TwoFactorEnabled, false)
+                .SetProperty(u => u.TwoFactorRecoveryCodes, (string?)null)
+                .SetProperty(u => u.MustChangePassword, false), ct);
+
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }

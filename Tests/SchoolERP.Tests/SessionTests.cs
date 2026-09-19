@@ -43,6 +43,7 @@ public class SessionTests
             foreach (var s in Rows.Values.Where(s => s.UserId == userId && s.EndedAtUtc is null)) { s.EndedAtUtc = DateTime.UtcNow; s.EndReason = reason; n++; }
             return Task.FromResult(n);
         }
+        public Task<int> DeleteFinishedBeforeAsync(DateTime cutoffUtc, CancellationToken ct = default) => Task.FromResult(0);
         public Task<int> SaveChangesAsync(CancellationToken ct = default) => Task.FromResult(0);
         private static UserSession Copy(UserSession s) => new()
         {

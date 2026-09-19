@@ -33,8 +33,17 @@ public class StudentProfile : BaseEntity
     public string? ParentPhone { get; set; }
     public string? Address { get; set; }
 
-    /// <summary>Active | TransferredOut | Graduated | Suspended.</summary>
-    public string Status { get; set; } = "Active";
+    /// <summary>One of <see cref="StudentStatuses"/>.</summary>
+    public string Status { get; set; } = StudentStatuses.Active;
 
     public DateTime? TransferredOutAtUtc { get; set; }
+}
+
+public static class StudentStatuses
+{
+    public const string Active = "Active";
+    /// <summary>Left the school: their transfer certificate was approved.</summary>
+    public const string TransferredOut = "TransferredOut";
+    /// <summary>Left, and their personal data has since been erased.</summary>
+    public const string Erased = "Erased";
 }

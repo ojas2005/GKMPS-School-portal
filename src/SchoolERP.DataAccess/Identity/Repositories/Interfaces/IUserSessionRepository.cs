@@ -16,5 +16,8 @@ public interface IUserSessionRepository
     /// <summary>Ends every open session of a user (password change/reset, deactivation, token theft).</summary>
     Task<int> EndAllForUserAsync(Guid userId, string reason, CancellationToken ct = default);
 
+    /// <summary>Deletes sessions that ended or expired before the cut-off, with their tokens (retention clean-up).</summary>
+    Task<int> DeleteFinishedBeforeAsync(DateTime cutoffUtc, CancellationToken ct = default);
+
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }

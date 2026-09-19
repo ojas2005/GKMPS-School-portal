@@ -144,6 +144,26 @@ public class StudentsController : ControllerBase
         }
     }
 
+    public record EraseStudentRequest(string ConfirmAdmissionNumber);
+
+    // Right to erasure (DPDP Act): removes a former student's personal data once they've left.
+    [HttpPost("{id:guid}/erase-personal-data")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal}")]
+    public async Task<IActionResult> ErasePersonalData(Guid id, [FromBody] EraseStudentRequest request,
+        [FromServices] SchoolERP.Business.Student.Services.StudentErasureService erasure, CancellationToken ct)
+    {
+        var actorUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? "unknown";
+        var actorRole = User.FindFirstValue(ClaimTypes.Role) ?? "unknown";
+        try
+        {
+            var result = await erasure.EraseAsync(id, request.ConfirmAdmissionNumber, actorUserId, actorRole, ct);
+            return Ok(ApiResponse<object>.Ok(result, "Personal data erased."));
+        }
+        catch (KeyNotFoundException ex) { return NotFound(ApiResponse<object>.Fail(ex.Message)); }
+        catch (InvalidOperationException ex) { return BadRequest(ApiResponse<object>.Fail(ex.Message)); }
+        catch (UnauthorizedAccessException ex) { return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message)); }
+    }
+
     // Every role that can open the enrollment report (including the accountant) may read it.
     [HttpGet("stats/active-by-class")]
     [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Teacher},{RoleNames.Accountant}")]

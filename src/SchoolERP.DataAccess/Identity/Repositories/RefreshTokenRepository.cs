@@ -43,5 +43,10 @@ public class RefreshTokenRepository : IRefreshTokenRepository
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(rt => rt.RevokedAtUtc, DateTime.UtcNow), ct);
 
+    public Task<int> DeleteFinishedBeforeAsync(DateTime cutoffUtc, CancellationToken ct = default) =>
+        _db.RefreshTokens
+            .Where(rt => rt.ExpiresAtUtc < cutoffUtc || (rt.RevokedAtUtc != null && rt.RevokedAtUtc < cutoffUtc))
+            .ExecuteDeleteAsync(ct);
+
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }

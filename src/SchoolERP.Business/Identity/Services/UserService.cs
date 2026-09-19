@@ -113,6 +113,20 @@ public class UserService : IUserService
             actorUserId, actorRole, userId);
     }
 
+    public async Task<string?> ErasePersonalDataAsync(Guid userId, string actorUserId, string actorRole, CancellationToken ct = default)
+    {
+        var user = await _users.FindByIdAsync(userId, ct);
+        if (user is null) return null;
+        EnsureCanManage(actorRole, user);
+
+        await _refreshTokens.RevokeAllForUserAsync(userId, ct);
+        await _sessions.EndAllForUserAsync(userId, SessionEndReasons.Deactivated, ct);
+        await _users.AnonymizeAsync(userId, ct);
+        _audit.Record(new SchoolERP.Common.Audit.AuditRecord(DateTime.UtcNow, "user.personal-data-erased",
+            Guid.TryParse(actorUserId, out var actor) ? actor : null, actorRole, userId.ToString(), Detail: $"role={user.Role}"));
+        return user.Email;
+    }
+
     public async Task ResetTwoFactorAsync(Guid userId, string actorUserId, string actorRole, CancellationToken ct = default)
     {
         var user = await _users.FindByIdAsync(userId, ct)
