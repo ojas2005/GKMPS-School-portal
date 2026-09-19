@@ -4,4 +4,10 @@
 **/.vscode/
 **/*.user
 .git/
+.github/
+.claude/
+# Secrets: never part of the build context (the image only needs src/).
 .env
+.env.*
+*.pdf
+scripts/

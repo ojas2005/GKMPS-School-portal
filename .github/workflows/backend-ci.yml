@@ -4,7 +4,7 @@ name: Backend CI
 # of during `docker compose up --build` on someone's machine (or worse, in production).
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
     branches: [main]
 
@@ -12,12 +12,12 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
-          dotnet-version: "9.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Restore
         run: dotnet restore SchoolERP.sln
@@ -25,48 +25,46 @@ jobs:
       - name: Build (Release, warnings as errors off — see note)
         run: dotnet build SchoolERP.sln --no-restore --configuration Release
 
-      # No test projects exist yet (see README "Next steps"). This step is intentionally
-      # here now, not bolted on later: it already runs on every push and currently passes
-      # trivially (dotnet test exits 0 with zero test projects) so the moment a test
-      # project is added under Tests/, it starts running in CI with no workflow change.
+      # Unit tests in Tests/SchoolERP.Tests (role hierarchy, claim scoping, rate-limit
+      # partitioning, per-module connection strings, in-process events).
       - name: Test
         run: dotnet test SchoolERP.sln --no-build --configuration Release
 
-  # Building the actual Docker images is a stronger signal than `dotnet build` alone --
-  # it catches Dockerfile drift (e.g. a missing COPY, a stale base image tag) that a
-  # plain SDK build can't see. Runs after build-and-test so we don't spend the extra
-  # minutes on a commit that was already broken.
-  docker-build:
+  # Builds the production image and, on pushes, publishes it to GitHub Container Registry
+  # (ghcr.io) -- free for a public repository, unlike a paid Azure registry. Every pushed
+  # commit gets an image tagged with its SHA; main also moves "latest". Pull requests only
+  # build it, which still catches Dockerfile drift a plain `dotnet build` can't see.
+  image:
     runs-on: ubuntu-latest
     needs: build-and-test
-    strategy:
-      # Let every leg run to completion: one service's image failing is not a reason
-      # to skip finding out whether the other eleven build.
-      fail-fast: false
-      matrix:
-        service:
-          - Identity.API
-          - Student.API
-          - Staff.API
-          - Attendance.API
-          - Academic.API
-          - Examination.API
-          - Fee.API
-          - Communication.API
-          - Library.API
-          - Transport.API
-          - Notification.API
-          - Reporting.API
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/schoolerp-app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      # Docker repository names must be lowercase, so "Identity.API" can't appear in
-      # the tag as-is -- lowercase it first.
-      - name: Build ${{ matrix.service }} image
-        run: |
-          TAG="schoolerp-$(echo '${{ matrix.service }}' | tr '[:upper:]' '[:lower:]'):ci"
-          docker build -f "Services/${{ matrix.service }}/Dockerfile" -t "$TAG" .
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - name: Build Gateway image
-        if: matrix.service == 'Identity.API' # only needs to run once, piggybacking on the first matrix leg
-        run: docker build -f Gateway/SchoolERP.Gateway/Dockerfile -t schoolerp-gateway:ci .
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and push on pushes)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ github.ref == 'refs/heads/main' && format('{0}:latest', env.IMAGE) || '' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,106 @@
+using SchoolERP.Api.Security;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using SchoolERP.Business.Examination.DTOs;
+using SchoolERP.Business.Examination.Services.Interfaces;
+using SchoolERP.Common;
+
+namespace SchoolERP.Api.Controllers.Examination;
+
+[ApiController]
+[Route("api/exams")]
+[Authorize]
+public class ExamsController : ControllerBase
+{
+    private readonly IExamService _examService;
+    private readonly IMarksService _marksService;
+
+    public ExamsController(IExamService examService, IMarksService marksService)
+    {
+        _examService = examService;
+        _marksService = marksService;
+    }
+
+    // A student's results across all their exams. Staff see everything; a student sees
+    // only their own PUBLISHED results.
+    [HttpGet("students/{studentId:guid}/results")]
+    public async Task<IActionResult> GetStudentResults(Guid studentId, [FromServices] StudentAccessGuard access, CancellationToken ct)
+    {
+        if (!await access.CanReadAsync(User, StudentRecord.Results, studentId, ct))
+            return Forbid();
+
+        var publishedOnly = User.IsSelfServiceRole();
+        var result = await _marksService.GetForStudentAsync(studentId, publishedOnly, ct);
+        return Ok(ApiResponse<object>.Ok(result));
+    }
+
+    [HttpPost]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Teacher}")]
+    public async Task<IActionResult> Create([FromBody] CreateExamRequest request, CancellationToken ct)
+    {
+        var result = await _examService.CreateAsync(request, ct);
+        return Ok(ApiResponse<ExamSummary>.Ok(result, "Exam created."));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetByClass([FromQuery] string? classId, CancellationToken ct)
+    {
+        // Staff may list every class's exams (no classId = all); students/parents only their own class.
+        if (User.IsSelfServiceRole())
+        {
+            classId ??= User.ClassId();
+            if (!User.CanAccessClass(classId))
+                return Forbid();
+        }
+
+        var result = await _examService.GetByClassAsync(classId, ct);
+        return Ok(ApiResponse<object>.Ok(result));
+    }
+
+    [HttpPost("{examId:guid}/publish")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal}")]
+    public async Task<IActionResult> Publish(Guid examId, CancellationToken ct)
+    {
+        try
+        {
+            await _examService.PublishResultsAsync(examId, ct);
+            return Ok(ApiResponse<object>.Ok(new { }, "Results published."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
+    [HttpGet("{examId:guid}/stats")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Teacher}")]
+    public async Task<IActionResult> GetStats(Guid examId, CancellationToken ct)
+    {
+        var result = await _examService.GetStatsAsync(examId, ct);
+        return Ok(ApiResponse<object>.Ok(result));
+    }
+
+    [HttpGet("{examId:guid}/students/{studentId:guid}/report-card")]
+    [EnableRateLimiting("documents")]
+    public async Task<IActionResult> GetReportCard(Guid examId, Guid studentId, [FromServices] StudentAccessGuard access, CancellationToken ct)
+    {
+        // Students/parents may only read their OWN report card.
+        if (!await access.CanReadAsync(User, StudentRecord.Results, studentId, ct))
+            return Forbid();
+
+        try
+        {
+            var url = await _examService.GenerateReportCardAsync(examId, studentId, ct);
+            return Ok(ApiResponse<object>.Ok(new { downloadUrl = url, expiresInMinutes = 15 }));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+}

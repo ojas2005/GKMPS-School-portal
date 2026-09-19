@@ -11,3 +11,10 @@ appsettings.*.local.json
 .claude/
 AZ-900_Study_Guide.pdf
 .DS_Store
+
+# Decrypted backups hold children's personal data -- never commit them.
+restored-backup/
+*.tar.gz.gpg
+
+# Local test data (two-step secrets)
+owner_2fa_local.json

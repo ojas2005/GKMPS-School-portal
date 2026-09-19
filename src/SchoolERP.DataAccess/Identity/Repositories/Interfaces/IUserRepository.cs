@@ -1,0 +1,56 @@
+using SchoolERP.DataAccess.Identity.Entities;
+
+namespace SchoolERP.DataAccess.Identity.Repositories.Interfaces;
+
+public interface IUserRepository
+{
+    Task<User?> FindByIdAsync(Guid id, CancellationToken ct = default);
+    Task<User?> FindByEmailAsync(string email, CancellationToken ct = default);
+
+    /// <summary>Matches by username OR email (both case-insensitive).</summary>
+    Task<User?> FindByLoginAsync(string loginId, CancellationToken ct = default);
+    Task<bool> ExistsByUsernameAsync(string username, CancellationToken ct = default);
+    Task<IReadOnlyList<User>> SearchUsersAsync(string? role, string? keyword, int page, int pageSize, CancellationToken ct = default);
+    Task<int> CountUsersAsync(string? role, string? keyword, CancellationToken ct = default);
+    Task<bool> ExistsByEmailAsync(string email, CancellationToken ct = default);
+
+    Task AddAsync(User user, CancellationToken ct = default);
+
+    /// <summary>Atomic bump -- no load-then-save round trip.</summary>
+    Task<int> UpdateLastLoginAsync(Guid userId, DateTime loginAtUtc, CancellationToken ct = default);
+
+    /// <summary>Atomic activate/deactivate toggle.</summary>
+    Task<int> SetActiveStatusAsync(Guid userId, bool isActive, CancellationToken ct = default);
+
+    /// <summary>Atomic password-hash overwrite -- used for admin-initiated resets.</summary>
+    Task<int> SetPasswordHashAsync(Guid userId, string passwordHash, CancellationToken ct = default);
+
+    /// <summary>Atomic increment (SQL-level, not load-then-save) after a failed password check.</summary>
+    Task<int> IncrementFailedLoginAttemptsAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>Locks the account until <paramref name="lockoutEndUtc"/>.</summary>
+    Task<int> SetLockoutAsync(Guid userId, DateTime lockoutEndUtc, CancellationToken ct = default);
+
+    /// <summary>Clears the failure counter and any lockout -- called on a successful login.</summary>
+    Task<int> ResetFailedLoginAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>Removes the user row and its refresh tokens outright (not a soft delete, so
+    /// the email/login ID can be reused).</summary>
+    Task HardDeleteAsync(Guid userId, CancellationToken ct = default);
+
+    Task<int> SetMustChangePasswordAsync(Guid userId, bool mustChange, CancellationToken ct = default);
+
+    /// <summary>Stores (or clears, with nulls) the two-step sign-in secret, state and recovery codes.</summary>
+    Task<int> SetTwoFactorAsync(Guid userId, string? secret, bool enabled, string? recoveryCodes, CancellationToken ct = default);
+
+    /// <summary>Records an accepted code's time-step, only if newer than the last one -- false means the code was already used.</summary>
+    Task<bool> TryAdvanceTwoFactorStepAsync(Guid userId, long step, CancellationToken ct = default);
+
+    /// <summary>Replaces the recovery codes only if they still equal <paramref name="expected"/> -- false means one was used concurrently.</summary>
+    Task<bool> TryReplaceRecoveryCodesAsync(Guid userId, string expected, string? remaining, CancellationToken ct = default);
+
+    /// <summary>Removes the person from the account: name, email, login ID, password, second factor; switched off for good.</summary>
+    Task<int> AnonymizeAsync(Guid userId, CancellationToken ct = default);
+
+    Task<int> SaveChangesAsync(CancellationToken ct = default);
+}

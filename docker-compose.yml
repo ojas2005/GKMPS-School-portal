@@ -1,9 +1,73 @@
 name: schoolerp
 
 services:
-  # Local TiDB for development only -- enabled by the `local-db` profile (COMPOSE_PROFILES=local-db
-  # in .env), never in production, where TIDB_* point at TiDB Cloud instead. Data is kept in
-  # the tidb-data volume. Services retry their startup migrations until it is ready.
+  # The whole backend: one ASP.NET Core app (presentation, business and data-access tiers).
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: schoolerp-app
+    restart: unless-stopped
+    depends_on:
+      # Only started with the local profiles; ignored when TIDB_*/AZURE_BLOB_* point at the cloud.
+      tidb:
+        condition: service_healthy
+        required: false
+      azurite:
+        condition: service_started
+        required: false
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # One server hosts every module's database (identity, student, fee, ...); the app picks
+      # the database per module. Production uses TiDB Cloud (TLS VerifyFull).
+      ConnectionStrings__SchoolDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
+      # Generated PDFs: "Database" (default, free) or "AzureBlob" (uses the connection below).
+      FileStorage__Provider: ${FILE_STORAGE_PROVIDER:-Database}
+      ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
+      BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-}
+      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
+      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
+      Jwt__SigningKey: ${JWT_SIGNING_KEY}
+      # First-boot seed only (ignored once the owner account exists). If unset, a random
+      # password is generated and printed once in this container's logs.
+      Owner__Username: ${OWNER_USERNAME:-ownerishim}
+      Owner__Password: ${OWNER_PASSWORD:-}
+      # Minutes without activity before a user is signed out.
+      Session__IdleTimeoutMinutes: ${SESSION_IDLE_TIMEOUT_MINUTES:-30}
+      Cors__AllowedOrigins__0: ${FRONTEND_URL:-http://localhost:4200}
+      Seq__Url: ${SEQ_URL:-}
+      # Real email delivery (optional). Leave SMTP_HOST empty to log notifications only.
+      Smtp__Host: ${SMTP_HOST:-}
+      Smtp__Port: ${SMTP_PORT:-587}
+      Smtp__Username: ${SMTP_USERNAME:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__From: ${SMTP_FROM:-}
+      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-true}
+    ports:
+      # Loopback only: reached from outside through Caddy. The Angular dev server proxies /api here.
+      - "127.0.0.1:5100:8080"
+
+  # TLS termination + reverse proxy in front of the app (automatic Let's Encrypt when DOMAIN
+  # is a real, publicly-resolvable name; a local certificate for `localhost`).
+  caddy:
+    image: caddy:2-alpine
+    container_name: schoolerp-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # ---------- Local development only (enable with COMPOSE_PROFILES in .env) ----------
+
+  # Local TiDB instead of TiDB Cloud. Profile: local-db.
   tidb:
     image: pingcap/tidb:v8.5.1
     container_name: schoolerp-tidb
@@ -20,448 +84,33 @@ services:
       timeout: 5s
       retries: 30
 
-  redis:
-    image: redis:7-alpine
-    container_name: schoolerp-redis
-    restart: unless-stopped
-    ports:
-      # 6380 on the host because a locally-installed Redis often owns 127.0.0.1:6379.
-      - "127.0.0.1:6380:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  rabbitmq:
-    image: rabbitmq:3-management-alpine
-    container_name: schoolerp-rabbitmq
-    # RabbitMQ keeps its data under a directory named after the node (rabbit@<hostname>),
-    # so the hostname must stay fixed or a recreated container would ignore the volume.
-    hostname: rabbitmq
-    restart: unless-stopped
-    environment:
-      # Only applied when the volume is first created: to change the password later,
-      # update it with `rabbitmqctl change_password` (or remove the rabbitmq-data volume).
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-schoolerp}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-devpassword}
-    volumes:
-      # Durable queues and persistent messages survive restarts and redeploys, so events
-      # not yet consumed (e.g. while notification-api is down) are not lost.
-      - rabbitmq-data:/var/lib/rabbitmq
-    ports:
-      # Host ports are for local debugging only (containers use the compose network) --
-      # 5673 on the host because a locally-installed RabbitMQ often owns 127.0.0.1:5672.
-      - "127.0.0.1:5673:5672"
-      - "127.0.0.1:15672:15672" # management UI
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Azure Storage emulator: backs the QuestPDF file uploads (receipts, report cards,
-  # transfer certificates) for Fee/Examination/Student.API in local dev, in place of a
-  # real Azure Storage account. Port 10000 (blob) is published to the host too, since
-  # the SAS download URLs need to be reachable from the developer's browser, not just
-  # from other containers -- see AzureBlobStorageService.RewriteForPublicAccess.
+  # Azure Storage emulator for receipts/report cards/certificates. Profile: local-storage.
+  # Port 10000 is published because SAS download URLs must be reachable from the browser
+  # (AZURE_BLOB_PUBLIC_BASE_URL rewrites them to localhost).
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:latest
     container_name: schoolerp-azurite
+    profiles: ["local-storage"]
     restart: unless-stopped
     command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000"
     ports:
       - "127.0.0.1:10000:10000"
 
-  # Centralized structured-log viewer: every service ships the same Serilog events here
-  # (see BuildingBlocks/SchoolERP.Shared/Logging/SharedLogging.cs) in addition to its own
-  # console output, so "did the fee-payment event actually fire" is one search across all
-  # 12 services instead of `docker compose logs` per-container. UI: http://localhost:8081
+  # Structured-log viewer (UI http://localhost:8081). Profile: seq; also set SEQ_URL=http://seq:5341.
   seq:
     image: datalust/seq:latest
     container_name: schoolerp-seq
+    profiles: ["seq"]
     restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"
-      # Local dev only, not exposed beyond the developer's machine (see docker-compose
-      # port mapping below) -- for a real deployment, set SEQ_FIRSTRUN_ADMINPASSWORD
-      # (or an equivalent secret) instead and drop this.
+      # Loopback-only local tool; set SEQ_FIRSTRUN_ADMINPASSWORD instead if it is ever exposed.
       SEQ_FIRSTRUN_NOAUTHENTICATION: "true"
     ports:
-      - "127.0.0.1:8081:80"   # web UI
-      - "127.0.0.1:5341:5341" # ingestion endpoint (Seq__Url below)
-
-  identity-api:
-    build:
-      context: .
-      dockerfile: Services/Identity.API/Dockerfile
-    container_name: schoolerp-identity-api
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      seq:
-        condition: service_started
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__IdentityDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=identity;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
-      ConnectionStrings__Redis: "redis:6379"
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-      # First-boot seed only (ignored once the owner account exists). If unset, a random
-      # password is generated and printed once in this container's logs.
-      Owner__Password: ${OWNER_PASSWORD:-}
-      RabbitMq__Host: rabbitmq
-      RabbitMq__Username: ${RABBITMQ_USER:-schoolerp}
-      RabbitMq__Password: ${RABBITMQ_PASSWORD:-devpassword}
-    ports:
-      - "127.0.0.1:5101:8080"
-
-  student-api:
-    build:
-      context: .
-      dockerfile: Services/Student.API/Dockerfile
-    container_name: schoolerp-student-api
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      azurite:
-        condition: service_started
-      seq:
-        condition: service_started
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__StudentDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=student;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
-      ConnectionStrings__Redis: "redis:6379"
-      ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
-      BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-}
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-      RabbitMq__Host: rabbitmq
-      RabbitMq__Username: ${RABBITMQ_USER:-schoolerp}
-      RabbitMq__Password: ${RABBITMQ_PASSWORD:-devpassword}
-    ports:
-      - "127.0.0.1:5102:8080"
-
-  staff-api:
-    build:
-      context: .
-      dockerfile: Services/Staff.API/Dockerfile
-    container_name: schoolerp-staff-api
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      seq:
-        condition: service_started
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__StaffDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=staff;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
-      ConnectionStrings__Redis: "redis:6379"
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-    ports:
-      - "127.0.0.1:5103:8080"
-
-  attendance-api:
-    build:
-      context: .
-      dockerfile: Services/Attendance.API/Dockerfile
-    container_name: schoolerp-attendance-api
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      seq:
-        condition: service_started
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__AttendanceDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=attendance;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
-      ConnectionStrings__Redis: "redis:6379"
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-    ports:
-      - "127.0.0.1:5104:8080"
-
-  academic-api:
-    build:
-      context: .
-      dockerfile: Services/Academic.API/Dockerfile
-    container_name: schoolerp-academic-api
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      seq:
-        condition: service_started
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__AcademicDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=academic;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
-      ConnectionStrings__Redis: "redis:6379"
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-    ports:
-      - "127.0.0.1:5105:8080"
-
-  examination-api:
-    build:
-      context: .
-      dockerfile: Services/Examination.API/Dockerfile
-    container_name: schoolerp-examination-api
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      azurite:
-        condition: service_started
-      seq:
-        condition: service_started
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__ExaminationDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=examination;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
-      ConnectionStrings__Redis: "redis:6379"
-      ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
-      BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-}
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-    ports:
-      - "127.0.0.1:5106:8080"
-
-  fee-api:
-    build:
-      context: .
-      dockerfile: Services/Fee.API/Dockerfile
-    container_name: schoolerp-fee-api
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      azurite:
-        condition: service_started
-      seq:
-        condition: service_started
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__FeeDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=fee;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
-      ConnectionStrings__Redis: "redis:6379"
-      ConnectionStrings__BlobStorage: ${AZURE_BLOB_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
-      BlobStorage__PublicBaseUrl: ${AZURE_BLOB_PUBLIC_BASE_URL:-}
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-      RabbitMq__Host: rabbitmq
-      RabbitMq__Username: ${RABBITMQ_USER:-schoolerp}
-      RabbitMq__Password: ${RABBITMQ_PASSWORD:-devpassword}
-    ports:
-      - "127.0.0.1:5107:8080"
-
-  communication-api:
-    build:
-      context: .
-      dockerfile: Services/Communication.API/Dockerfile
-    container_name: schoolerp-communication-api
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      seq:
-        condition: service_started
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__CommunicationDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=communication;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
-      ConnectionStrings__Redis: "redis:6379"
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-    ports:
-      - "127.0.0.1:5108:8080"
-
-  library-api:
-    build:
-      context: .
-      dockerfile: Services/Library.API/Dockerfile
-    container_name: schoolerp-library-api
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      seq:
-        condition: service_started
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__LibraryDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=library;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
-      ConnectionStrings__Redis: "redis:6379"
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-    ports:
-      - "127.0.0.1:5109:8080"
-
-  transport-api:
-    build:
-      context: .
-      dockerfile: Services/Transport.API/Dockerfile
-    container_name: schoolerp-transport-api
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      seq:
-        condition: service_started
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__TransportDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=transport;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
-      ConnectionStrings__Redis: "redis:6379"
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-      Services__StudentApiBaseUrl: "http://student-api:8080"
-    ports:
-      - "127.0.0.1:5110:8080"
-
-  notification-api:
-    build:
-      context: .
-      dockerfile: Services/Notification.API/Dockerfile
-    container_name: schoolerp-notification-api
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      seq:
-        condition: service_started
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__NotificationDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=notification;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
-      ConnectionStrings__Redis: "redis:6379"
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-      RabbitMq__Host: rabbitmq
-      RabbitMq__Username: ${RABBITMQ_USER:-schoolerp}
-      RabbitMq__Password: ${RABBITMQ_PASSWORD:-devpassword}
-      # Real email delivery (optional). Leave SMTP_HOST empty to log notifications only.
-      Smtp__Host: ${SMTP_HOST:-}
-      Smtp__Port: ${SMTP_PORT:-587}
-      Smtp__Username: ${SMTP_USERNAME:-}
-      Smtp__Password: ${SMTP_PASSWORD:-}
-      Smtp__From: ${SMTP_FROM:-}
-      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-true}
-    ports:
-      - "127.0.0.1:5111:8080"
-
-  reporting-api:
-    build:
-      context: .
-      dockerfile: Services/Reporting.API/Dockerfile
-    container_name: schoolerp-reporting-api
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-      student-api:
-        condition: service_started
-      fee-api:
-        condition: service_started
-      seq:
-        condition: service_started
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__ReportingDb: "Server=${TIDB_HOST:-127.0.0.1};Port=${TIDB_PORT:-4000};Database=reporting;Uid=${TIDB_USER};Pwd=${TIDB_PASSWORD};SslMode=${TIDB_SSL_MODE:-VerifyFull};"
-      ConnectionStrings__Redis: "redis:6379"
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-      Services__StudentApiBaseUrl: "http://student-api:8080"
-      Services__FeeApiBaseUrl: "http://fee-api:8080"
-    ports:
-      - "127.0.0.1:5112:8080"
-
-  gateway:
-    build:
-      context: .
-      dockerfile: Gateway/SchoolERP.Gateway/Dockerfile
-    container_name: schoolerp-gateway
-    restart: unless-stopped
-    depends_on:
-      - identity-api
-      - student-api
-      - staff-api
-      - attendance-api
-      - academic-api
-      - examination-api
-      - fee-api
-      - communication-api
-      - library-api
-      - transport-api
-      - notification-api
-      - reporting-api
-      - redis
-      - seq
-    environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      Seq__Url: "http://seq:5341"
-      ConnectionStrings__Redis: "redis:6379"
-      Jwt__Issuer: ${JWT_ISSUER:-SchoolERP.Identity}
-      Jwt__Audience: ${JWT_AUDIENCE:-SchoolERP.Clients}
-      Jwt__SigningKey: ${JWT_SIGNING_KEY}
-      Cors__AllowedOrigins__0: ${FRONTEND_URL:-http://localhost:4200}
-    ports:
-      # Bound to loopback only: the gateway is reached from the outside world via
-      # Caddy (below), never directly. `curl http://localhost:5100/...` still works
-      # from *this* machine for local debugging -- it just isn't reachable from
-      # anywhere else, so there's no way to bypass TLS termination from outside.
-      - "127.0.0.1:5100:8080"
-
-  # TLS termination + reverse proxy in front of the gateway. Caddy handles cert
-  # issuance/renewal automatically (see Caddyfile) -- set DOMAIN in .env to a real,
-  # publicly-resolvable name and open 80/443 on this host to go live; until then it
-  # falls back to `localhost` with a local/internal cert, no ACME calls attempted.
-  caddy:
-    image: caddy:2-alpine
-    container_name: schoolerp-caddy
-    restart: unless-stopped
-    depends_on:
-      - gateway
-    environment:
-      DOMAIN: ${DOMAIN:-localhost}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
+      - "127.0.0.1:8081:80"
+      - "127.0.0.1:5341:5341"
 
 volumes:
   tidb-data:
-  rabbitmq-data:
   caddy-data:
   caddy-config:

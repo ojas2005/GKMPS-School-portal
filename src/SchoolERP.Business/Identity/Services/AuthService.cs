@@ -1,0 +1,492 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using SchoolERP.Business.Identity.Auth;
+using SchoolERP.Business.Identity.DTOs;
+using SchoolERP.Business.Identity.Sessions;
+using SchoolERP.Business.Identity.TwoFactor;
+using SchoolERP.Business.Identity.Passwords;
+using Microsoft.Extensions.Caching.Memory;
+using SchoolERP.DataAccess.Identity.Entities;
+using SchoolERP.DataAccess.Identity.Repositories.Interfaces;
+using SchoolERP.Business.Identity.Services.Interfaces;
+using SchoolERP.Common;
+using SchoolERP.Common.Events;
+using SchoolERP.Common.Audit;
+
+namespace SchoolERP.Business.Identity.Services;
+
+/// <summary>
+/// Owns every workflow rule around authentication: password verification, refresh-token
+/// rotation, and account-lockout style checks. Controllers never touch a repository
+/// directly -- that coordination lives here.
+/// </summary>
+public class AuthService : IAuthService
+{
+    private readonly IUserRepository _users;
+    private readonly IRefreshTokenRepository _refreshTokens;
+    private readonly ISessionService _sessions;
+    private readonly IAuditTrail _audit;
+    private readonly ITwoFactorService _twoFactor;
+    private readonly IMemoryCache _challenges;
+    private readonly ITokenGenerator _tokenGenerator;
+    private readonly PasswordHasher<User> _passwordHasher = new();
+    private readonly IEventPublisher _events;
+    private readonly StudentProfileResolver _studentProfiles;
+    private readonly StaffProfileResolver _staffProfiles;
+    private readonly JwtOptions _jwtOptions;
+    private readonly ILogger<AuthService> _logger;
+    private readonly int _maxFailedAttempts;
+    private readonly int _maxFailedAttemptsEverywhere;
+    private readonly TimeSpan _lockoutDuration;
+    private readonly string? _schoolName;
+
+    public AuthService(
+        IUserRepository users,
+        IRefreshTokenRepository refreshTokens,
+        ISessionService sessions,
+        IAuditTrail audit,
+        ITwoFactorService twoFactor,
+        IMemoryCache challenges,
+        ITokenGenerator tokenGenerator,
+        IEventPublisher events,
+        StudentProfileResolver studentProfiles,
+        StaffProfileResolver staffProfiles,
+        IOptions<JwtOptions> jwtOptions,
+        IConfiguration configuration,
+        ILogger<AuthService> logger)
+    {
+        _users = users;
+        _refreshTokens = refreshTokens;
+        _sessions = sessions;
+        _audit = audit;
+        _twoFactor = twoFactor;
+        _challenges = challenges;
+        _tokenGenerator = tokenGenerator;
+        _events = events;
+        _studentProfiles = studentProfiles;
+        _staffProfiles = staffProfiles;
+        _jwtOptions = jwtOptions.Value;
+        _logger = logger;
+        _maxFailedAttempts = configuration.GetValue("AccountLockout:MaxFailedAttempts", 5);
+        _maxFailedAttemptsEverywhere = configuration.GetValue("AccountLockout:MaxFailedAttemptsEverywhere", 30);
+        _schoolName = configuration["School:Name"];
+        _lockoutDuration = TimeSpan.FromMinutes(configuration.GetValue("AccountLockout:LockoutMinutes", 15));
+    }
+
+    // Resolves the linked student profile for self-service accounts: a Student's own record,
+    // or for a Parent the child whose record points at this login (StudentProfile.ParentUserId).
+    private void Audit(string action, User? user, string? ip, string? detail = null) =>
+        _audit.Record(new AuditRecord(DateTime.UtcNow, action, user?.Id, user?.Role, user?.Id.ToString(), null, ip, detail));
+
+    private async Task<StudentProfile?> ResolveStudentProfileAsync(User user, CancellationToken ct) =>
+        user.Role switch
+        {
+            RoleNames.Student => await _studentProfiles.ResolveByUserAsync(user.Id, asParent: false, ct),
+            RoleNames.Parent => await _studentProfiles.ResolveByUserAsync(user.Id, asParent: true, ct),
+            _ => null
+        };
+
+    // Resolves the linked staff profile for staff-side accounts so the token carries
+    // staffId + class-teacher scoping claims.
+    private async Task<StaffClaimsProfile?> ResolveStaffProfileAsync(User user, CancellationToken ct) =>
+        user.Role is RoleNames.Teacher or RoleNames.Principal or RoleNames.Accountant or RoleNames.Librarian or RoleNames.Admin
+            ? await _staffProfiles.ResolveByUserAsync(user.Id, ct)
+            : null;
+
+    public async Task<RegisteredUser> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
+    {
+        // Duplicate-prevention guard before insert, mirroring HasStudentReviewed()-style checks.
+        if (await _users.ExistsByEmailAsync(request.Email, ct))
+            throw new InvalidOperationException("An account with this email already exists.");
+
+        if (!RoleNames.All.Contains(request.Role))
+            throw new InvalidOperationException($"'{request.Role}' is not a recognized role.");
+
+        var username = string.IsNullOrWhiteSpace(request.Username) ? null : request.Username.Trim();
+        if (username is not null && await _users.ExistsByUsernameAsync(username, ct))
+            throw new InvalidOperationException($"The login ID '{username}' is already taken.");
+
+        // Even a first password (changed at first sign-in) mustn't be easy to guess before then.
+        var problems = PasswordPolicy.Check(request.Password, username, request.Email, request.FullName, _schoolName);
+        if (problems.Count > 0) throw new InvalidOperationException(string.Join(" ", problems));
+
+        var user = new User
+        {
+            Email = request.Email.ToLowerInvariant(),
+            Username = username,
+            FullName = request.FullName,
+            Role = request.Role,
+            IsEmailVerified = false,
+            IsActive = true,
+            // Whoever created the account knows this password, so the owner of the account
+            // picks their own at first sign-in.
+            MustChangePassword = true
+        };
+        user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
+
+        await _users.AddAsync(user, ct);
+        await _users.SaveChangesAsync(ct);
+
+        // Raised only after the account is saved; notification handlers run in the background.
+        await _events.PublishAsync(new UserRegisteredEvent
+        {
+            UserId = user.Id,
+            Email = user.Email,
+            Role = user.Role
+        }, ct);
+
+        _logger.LogInformation("New account registered: {UserId} ({Role})", user.Id, user.Role);
+        Audit("user.created", user, null, $"role={user.Role}");
+
+        // Only the new account's details -- handing its tokens to the admin who created it
+        // would let them act as that user without ever knowing their password.
+        return new RegisteredUser(user.Id, user.Email, user.Username, user.FullName, user.Role);
+    }
+
+    // One message for every refused sign-in -- unknown login ID, wrong password, a paused
+    // account -- so the reply never reveals which login IDs exist or which are locked.
+    private const string SignInRefused = "Invalid login ID or password. After several wrong attempts, sign-in is paused for a while.";
+
+    // Verified against when the login ID doesn't exist, so an unknown ID takes as long to
+    // refuse as a wrong password does and timing can't tell them apart either.
+    private static readonly string DecoyHash = new PasswordHasher<User>().HashPassword(
+        new User { Email = "decoy@invalid", FullName = "decoy", Role = RoleNames.Student },
+        Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24)));
+
+    public async Task<AuthResult> LoginAsync(LoginRequest request, string? ipAddress, CancellationToken ct = default)
+    {
+        var user = await _users.FindByLoginAsync(request.LoginId, ct);
+        if (user is null || string.IsNullOrEmpty(user.PasswordHash))
+        {
+            _passwordHasher.VerifyHashedPassword(user ?? new User { Email = "", FullName = "", Role = "" }, DecoyHash, request.Password ?? "");
+            Audit("auth.login.unknown-user", user, ipAddress, $"loginId={request.LoginId}");
+            throw new UnauthorizedAccessException(SignInRefused);
+        }
+
+        // Wrong guesses pause sign-in for that account from that network address, so an
+        // attacker elsewhere can't lock the real user out by guessing. Many wrong guesses
+        // from anywhere (a spread-out attack) also pause the account as a whole.
+        var pauseKey = $"login-fails:{user.Id}:{ipAddress}";
+        var pausedHere = _challenges.TryGetValue(pauseKey, out int failsHere) && failsHere >= _maxFailedAttempts;
+        var pausedEverywhere = user.LockoutEndUtc is { } lockoutEnd && lockoutEnd > DateTime.UtcNow;
+        if (pausedHere || pausedEverywhere)
+        {
+            // Same work and the same answer as a wrong password -- even the right password
+            // gets no different reply while paused, so the pause can't be used to test guesses.
+            _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password ?? "");
+            Audit("auth.login.paused", user, ipAddress, pausedEverywhere ? "account paused" : "paused for this address");
+            throw new UnauthorizedAccessException(SignInRefused);
+        }
+
+        var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password ?? "");
+        if (verifyResult == PasswordVerificationResult.Failed)
+        {
+            failsHere++;
+            _challenges.Set(pauseKey, failsHere, _lockoutDuration);
+
+            // IncrementFailedLoginAttemptsAsync is a raw SQL increment (ExecuteUpdateAsync) --
+            // it bypasses the change tracker, so compute the new count from the value in hand.
+            var attempts = user.FailedLoginAttempts + 1;
+            await _users.IncrementFailedLoginAttemptsAsync(user.Id, ct);
+            if (attempts >= _maxFailedAttemptsEverywhere)
+            {
+                var lockoutEndUtc = DateTime.UtcNow.Add(_lockoutDuration);
+                await _users.SetLockoutAsync(user.Id, lockoutEndUtc, ct);
+                Audit("auth.lockout", user, ipAddress, $"attempts={attempts}, from anywhere");
+            }
+            else if (failsHere == _maxFailedAttempts)
+            {
+                Audit("auth.lockout", user, ipAddress, $"attempts={failsHere}, this address only");
+            }
+            else
+            {
+                Audit("auth.login.failed", user, ipAddress, $"attempt={failsHere}");
+            }
+            throw new UnauthorizedAccessException(SignInRefused);
+        }
+
+        // Only someone who knows the password learns the account is switched off.
+        if (!user.IsActive)
+        {
+            Audit("auth.login.deactivated", user, ipAddress);
+            throw new UnauthorizedAccessException("This account has been deactivated. Contact the school office.");
+        }
+
+        _challenges.Remove(pauseKey);
+        await _users.ResetFailedLoginAsync(user.Id, ct);
+
+        if (user.TwoFactorEnabled)
+        {
+            // Password is right; the authenticator code comes next. The challenge proves the
+            // first step was passed and expires in five minutes.
+            var challenge = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
+            _challenges.Set(ChallengeKey(challenge), new TwoFactorChallengeState(user.Id, request.RememberMe), TimeSpan.FromMinutes(5));
+            Audit("auth.login.password-ok", user, ipAddress, "waiting for two-step code");
+            return new AuthResult("", "", DateTime.UtcNow, user.Id, "", "", "", TwoFactorRequired: true, TwoFactorChallenge: challenge);
+        }
+
+        await _users.UpdateLastLoginAsync(user.Id, DateTime.UtcNow, ct);
+        Audit("auth.login", user, ipAddress, request.RememberMe ? "kept signed in on this device" : null);
+
+        return await IssueTokensAsync(user, ipAddress, ct, request.RememberMe);
+    }
+
+    public async Task<AuthResult> CompleteTwoFactorLoginAsync(TwoFactorLoginRequest request, string? ipAddress, CancellationToken ct = default)
+    {
+        if (!_challenges.TryGetValue(ChallengeKey(request.Challenge), out TwoFactorChallengeState? state) || state is null)
+            throw new UnauthorizedAccessException("This sign-in has expired. Enter your password again.");
+
+        var user = await _users.FindByIdAsync(state.UserId, ct);
+        if (user is null || !user.IsActive)
+            throw new UnauthorizedAccessException("Invalid login ID or password.");
+
+        if (!await _twoFactor.VerifyAsync(user, request.Code, ct))
+        {
+            // Five wrong codes and the password has to be entered again.
+            state.Attempts++;
+            if (state.Attempts >= 5) _challenges.Remove(ChallengeKey(request.Challenge));
+            Audit("auth.login.two-factor-failed", user, ipAddress, $"attempt={state.Attempts}");
+            throw new UnauthorizedAccessException(state.Attempts >= 5
+                ? "Too many wrong codes. Enter your password again."
+                : "That code isn't right. Try the newest code from your app.");
+        }
+
+        _challenges.Remove(ChallengeKey(request.Challenge));
+        await _users.UpdateLastLoginAsync(user.Id, DateTime.UtcNow, ct);
+        Audit("auth.login", user, ipAddress, "with two-step code");
+        return await IssueTokensAsync(user, ipAddress, ct, state.RememberMe);
+    }
+
+    private sealed class TwoFactorChallengeState(Guid userId, bool rememberMe)
+    {
+        public Guid UserId { get; } = userId;
+        public bool RememberMe { get; } = rememberMe;
+        public int Attempts { get; set; }
+    }
+
+    private static string ChallengeKey(string challenge) => $"2fa-challenge:{challenge}";
+
+    /// <summary>What the user must do before they may use the app, if anything.</summary>
+    private string? PendingActionFor(User user) =>
+        user.MustChangePassword ? "change-password"
+        : _twoFactor.IsRequiredFor(user.Role) && !user.TwoFactorEnabled ? "setup-two-factor"
+        : null;
+
+    public async Task<AuthResult> RefreshAsync(RefreshRequest request, string? ipAddress, CancellationToken ct = default)
+    {
+        var tokenHash = _tokenGenerator.HashToken(request.RefreshToken);
+        var storedToken = await _refreshTokens.FindByTokenHashAsync(tokenHash, ct)
+            ?? throw new UnauthorizedAccessException("The refresh token is unrecognized.");
+
+        if (!string.IsNullOrWhiteSpace(request.AccessToken))
+        {
+            var principal = _tokenGenerator.ValidateAccessTokenIgnoringExpiry(request.AccessToken)
+                ?? throw new UnauthorizedAccessException("The access token is malformed.");
+
+            // JwtSecurityTokenHandler maps the JWT `sub` claim to ClaimTypes.NameIdentifier on
+            // the way in, so look under both names.
+            var userIdClaim = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? principal.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
+                ?? throw new UnauthorizedAccessException("The access token is missing its subject claim.");
+
+            if (storedToken.UserId.ToString() != userIdClaim)
+                throw new UnauthorizedAccessException("The refresh token does not match this access token.");
+        }
+
+        if (!storedToken.IsActive)
+        {
+            // A token that was already swapped for a newer one being used again means two
+            // parties hold it -- possible theft, so sign the user out everywhere. Two
+            // exceptions: a token swapped only moments ago is almost always a second browser
+            // tab that refreshed at the same time (it retries with the new token), and a token
+            // that was simply revoked (sign-out, password change, admin action) or expired is
+            // just stale -- neither may sign the user out of the session they're using.
+            var justSwapped = storedToken.RevokedAtUtc is { } swappedAt && DateTime.UtcNow - swappedAt < ConcurrentRefreshWindow;
+            if (storedToken.ReplacedByTokenHash is not null && !justSwapped)
+            {
+                await _refreshTokens.RevokeAllForUserAsync(storedToken.UserId, ct);
+                await _sessions.EndAllForUserAsync(storedToken.UserId, SessionEndReasons.TokenReuse, ct);
+                _audit.Record(new AuditRecord(DateTime.UtcNow, "auth.token-reuse", storedToken.UserId, storedToken.User?.Role, storedToken.UserId.ToString(), null, ipAddress,
+                    "an already-used refresh token was presented again; all sessions ended"));
+            }
+            throw new UnauthorizedAccessException("The refresh token has expired or was already used.");
+        }
+
+        var user = storedToken.User ?? await _users.FindByIdAsync(storedToken.UserId, ct)
+            ?? throw new UnauthorizedAccessException("The account no longer exists.");
+
+        if (!user.IsActive)
+            throw new UnauthorizedAccessException("This account has been deactivated.");
+
+        // The session must still be alive: not signed out, not idle too long, not past its cap.
+        // Tokens from before sessions existed get a fresh session instead of a forced sign-out.
+        UserSession session;
+        if (storedToken.SessionId is { } sessionId)
+        {
+            var (continued, state) = await _sessions.ContinueAsync(sessionId, user.Id, ct);
+            if (continued is null)
+            {
+                await _refreshTokens.RevokeAsync(storedToken.Id, replacedByTokenHash: null, ct);
+                throw new UnauthorizedAccessException(_sessions.Explain(state));
+            }
+            session = continued;
+        }
+        else
+        {
+            session = await _sessions.StartAsync(user.Id, DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenDays), ipAddress, ct);
+        }
+
+        // Rotate: revoke the presented token, issue a brand new pair.
+        var newRawRefreshToken = _tokenGenerator.GenerateRefreshTokenRaw();
+        var newHash = _tokenGenerator.HashToken(newRawRefreshToken);
+
+        // Exactly one request may use up a refresh token. Checking "is it active?" and then
+        // revoking it as two steps let two simultaneous requests both pass the check and both
+        // get a fresh login -- a stolen token used at the same moment as the real one went
+        // unnoticed. The conditional swap closes that: the loser is refused.
+        if (!await _refreshTokens.TryRotateAsync(storedToken.Id, newHash, ct))
+            throw new UnauthorizedAccessException("The refresh token has expired or was already used.");
+
+        var profile = await ResolveStudentProfileAsync(user, ct);
+        var staffProfile = await ResolveStaffProfileAsync(user, ct);
+        var pending = PendingActionFor(user);
+        var newAccessToken = _tokenGenerator.GenerateAccessToken(user, profile, staffProfile, session.Id, pending);
+        var newTokenEntity = new SchoolERP.DataAccess.Identity.Entities.RefreshToken
+        {
+            UserId = user.Id,
+            SessionId = session.Id,
+            TokenHash = newHash,
+            // Never outlives the session's hard cap.
+            ExpiresAtUtc = Min(DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenDays), session.ExpiresAtUtc),
+            CreatedByIp = ipAddress
+        };
+        await _refreshTokens.AddAsync(newTokenEntity, ct);
+        await _refreshTokens.SaveChangesAsync(ct);
+
+        return new AuthResult(
+            newAccessToken,
+            newRawRefreshToken,
+            DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenMinutes),
+            user.Id,
+            user.Email,
+            user.FullName,
+            user.Role,
+            profile?.StudentId,
+            profile?.ClassId,
+            profile?.SectionId,
+            user.Username,
+            staffProfile?.StaffId,
+            staffProfile?.ClassTeacherOfClassId,
+            staffProfile?.ClassTeacherOfSectionId,
+            _sessions.IdleTimeoutMinutes,
+            PendingAction: pending);
+    }
+
+    // Possession of the raw refresh token is the proof of ownership here -- no access token
+    // is required, so logging out still revokes the session after a page reload has wiped
+    // the in-memory access token.
+    public async Task LogoutAsync(string refreshToken, CancellationToken ct = default)
+    {
+        var tokenHash = _tokenGenerator.HashToken(refreshToken);
+        var stored = await _refreshTokens.FindByTokenHashAsync(tokenHash, ct);
+        if (stored is not null && stored.RevokedAtUtc is null)
+        {
+            await _refreshTokens.RevokeAsync(stored.Id, replacedByTokenHash: null, ct);
+        }
+        if (stored?.SessionId is { } sessionId)
+        {
+            await _sessions.EndAsync(sessionId, SessionEndReasons.SignedOut, ct);
+        }
+        if (stored is not null)
+            _audit.Record(new AuditRecord(DateTime.UtcNow, "auth.logout", stored.UserId, stored.User?.Role, stored.UserId.ToString()));
+    }
+
+    public async Task<AuthResult> ChangePasswordAsync(Guid userId, ChangePasswordRequest request, string? ipAddress, CancellationToken ct = default)
+    {
+        var user = await _users.FindByIdAsync(userId, ct)
+            ?? throw new UnauthorizedAccessException("The account no longer exists.");
+
+        if (!user.IsActive)
+            throw new UnauthorizedAccessException("This account has been deactivated.");
+
+        if (string.IsNullOrEmpty(user.PasswordHash) ||
+            _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword) == PasswordVerificationResult.Failed)
+            throw new InvalidOperationException("The current password is incorrect.");
+
+        if (request.CurrentPassword == request.NewPassword)
+            throw new InvalidOperationException("The new password must be different from the current one.");
+
+        var problems = PasswordPolicy.Check(request.NewPassword, user.Username, user.Email, user.FullName, _schoolName);
+        if (problems.Count > 0) throw new InvalidOperationException(string.Join(" ", problems));
+
+        await _users.SetPasswordHashAsync(user.Id, _passwordHasher.HashPassword(user, request.NewPassword), ct);
+        if (user.MustChangePassword)
+        {
+            await _users.SetMustChangePasswordAsync(user.Id, false, ct);
+            user.MustChangePassword = false;
+        }
+
+        // Sign out every other session, then hand this one a fresh token pair.
+        await _refreshTokens.RevokeAllForUserAsync(user.Id, ct);
+        await _sessions.EndAllForUserAsync(user.Id, SessionEndReasons.PasswordChanged, ct);
+        _logger.LogInformation("AUDIT actor={UserId} action=User.ChangePassword entity=User entityId={UserId}", user.Id, user.Id);
+        Audit("auth.password.changed", user, ipAddress);
+
+        return await IssueTokensAsync(user, ipAddress, ct);
+    }
+
+    // A sign-in on a shared computer lasts at most this long; "keep me signed in" allows up to
+    // Jwt:RefreshTokenDays.
+    private static readonly TimeSpan UnrememberedSessionLimit = TimeSpan.FromHours(12);
+
+    private async Task<AuthResult> IssueTokensAsync(User user, string? ipAddress, CancellationToken ct, bool rememberMe = false)
+    {
+        // Every sign-in is its own session; its refresh tokens never outlive it.
+        var lasts = rememberMe ? TimeSpan.FromDays(_jwtOptions.RefreshTokenDays) : UnrememberedSessionLimit;
+        var session = await _sessions.StartAsync(user.Id, DateTime.UtcNow.Add(lasts), ipAddress, ct);
+
+        var profile = await ResolveStudentProfileAsync(user, ct);
+        var staffProfile = await ResolveStaffProfileAsync(user, ct);
+        var pending = PendingActionFor(user);
+        var accessToken = _tokenGenerator.GenerateAccessToken(user, profile, staffProfile, session.Id, pending);
+        var rawRefreshToken = _tokenGenerator.GenerateRefreshTokenRaw();
+        var tokenHash = _tokenGenerator.HashToken(rawRefreshToken);
+
+        var refreshTokenEntity = new SchoolERP.DataAccess.Identity.Entities.RefreshToken
+        {
+            UserId = user.Id,
+            SessionId = session.Id,
+            TokenHash = tokenHash,
+            ExpiresAtUtc = Min(DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenDays), session.ExpiresAtUtc),
+            CreatedByIp = ipAddress
+        };
+
+        await _refreshTokens.AddAsync(refreshTokenEntity, ct);
+        await _refreshTokens.SaveChangesAsync(ct);
+
+        return new AuthResult(
+            accessToken,
+            rawRefreshToken,
+            DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenMinutes),
+            user.Id,
+            user.Email,
+            user.FullName,
+            user.Role,
+            profile?.StudentId,
+            profile?.ClassId,
+            profile?.SectionId,
+            user.Username,
+            staffProfile?.StaffId,
+            staffProfile?.ClassTeacherOfClassId,
+            staffProfile?.ClassTeacherOfSectionId,
+            _sessions.IdleTimeoutMinutes,
+            PendingAction: pending);
+    }
+
+    private static DateTime Min(DateTime a, DateTime b) => a < b ? a : b;
+
+    // How long after a token is swapped a second use still counts as a concurrent refresh
+    // from another tab rather than as theft.
+    private static readonly TimeSpan ConcurrentRefreshWindow = TimeSpan.FromSeconds(30);
+}
