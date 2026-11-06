@@ -18,7 +18,7 @@ namespace SchoolERP.DataAccess.Student.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .UseCollation("utf8mb4_general_ci")
-                .HasAnnotation("ProductVersion", "9.0.0")
+                .HasAnnotation("ProductVersion", "9.0.20")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
@@ -148,6 +148,18 @@ namespace SchoolERP.DataAccess.Student.Migrations
                     b.Property<DateTime>("DateOfBirth")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<string>("FatherEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<string>("FatherName")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<string>("FatherPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -160,9 +172,21 @@ namespace SchoolERP.DataAccess.Student.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("tinyint(1)");
 
-                    b.Property<Guid>("LinkedUserId")
+                    b.Property<Guid?>("LinkedUserId")
                         .HasColumnType("char(36)")
                         .UseCollation("ascii_bin");
+
+                    b.Property<string>("MotherEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<string>("MotherName")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<string>("MotherPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
 
                     b.Property<string>("ParentEmail")
                         .HasColumnType("longtext");
@@ -177,13 +201,20 @@ namespace SchoolERP.DataAccess.Student.Migrations
                         .HasColumnType("char(36)")
                         .UseCollation("ascii_bin");
 
+                    b.Property<string>("RemovalReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<DateTime?>("RemovedAtUtc")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<string>("SectionId")
                         .IsRequired()
                         .HasColumnType("varchar(255)");
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("varchar(255)");
 
                     b.Property<DateTime?>("TransferredOutAtUtc")
                         .HasColumnType("datetime(6)");
@@ -197,6 +228,8 @@ namespace SchoolERP.DataAccess.Student.Migrations
                         .IsUnique();
 
                     b.HasIndex("ParentUserId");
+
+                    b.HasIndex("Status");
 
                     b.HasIndex("ClassId", "SectionId");
 

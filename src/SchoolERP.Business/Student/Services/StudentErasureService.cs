@@ -11,9 +11,9 @@ public record StudentErasureResult(string FormerName, bool StudentLoginErased, b
 
 /// <summary>
 /// Erases a former student's personal data -- the "right to erasure" in India's DPDP Act.
-/// Only for students who have left (their transfer certificate was approved), so a current
+/// Only for students who have left (removed, or their transfer certificate was approved), so a current
 /// pupil can't be wiped by mistake. What goes: name, date of birth, gender, address and
-/// parent contacts on the profile; the student's login, and the parent's login unless it
+/// both parents' details on the profile; the student's login, and the parent's login unless it
 /// still serves a sibling; transfer-certificate and report-card PDFs (which print the name
 /// and date of birth); and notification records addressed to them. What stays, no longer naming the
 /// child: fee and payment records (kept for accounts, as the law requires) and marks and
@@ -41,16 +41,18 @@ public class StudentErasureService
         var student = await _students.FindByIdAsync(studentId, ct) ?? throw new KeyNotFoundException("Student not found.");
         if (student.Status == StudentStatuses.Erased)
             throw new InvalidOperationException("This student's personal data has already been erased.");
-        if (student.Status != StudentStatuses.TransferredOut)
-            throw new InvalidOperationException("Only a student who has left can be erased. Approve their transfer certificate first.");
+        if (student.Status is not (StudentStatuses.TransferredOut or StudentStatuses.Removed))
+            throw new InvalidOperationException("Only a student who has left can be erased. Remove them, or approve their transfer certificate, first.");
         if (!string.Equals(confirmAdmissionNumber?.Trim(), student.AdmissionNumber, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Type the student's admission number to confirm.");
 
-        var forget = new List<string>();
-        if (!string.IsNullOrWhiteSpace(student.ParentEmail)) forget.Add(student.ParentEmail);
-        if (!string.IsNullOrWhiteSpace(student.ParentPhone)) forget.Add(student.ParentPhone);
+        var forget = new[] { student.ParentEmail, student.ParentPhone, student.FatherEmail, student.FatherPhone, student.MotherEmail, student.MotherPhone }
+            .Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v!).ToList();
 
-        var studentEmail = await _users.ErasePersonalDataAsync(student.LinkedUserId, actorUserId, actorRole, ct);
+        // Students admitted before logins were dropped may still have one of their own.
+        var studentEmail = student.LinkedUserId is { } studentUserId
+            ? await _users.ErasePersonalDataAsync(studentUserId, actorUserId, actorRole, ct)
+            : null;
         if (studentEmail is not null) forget.Add(studentEmail);
 
         var parentErased = false;

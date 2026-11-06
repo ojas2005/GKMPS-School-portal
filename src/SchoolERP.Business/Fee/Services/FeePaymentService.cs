@@ -6,6 +6,7 @@ using SchoolERP.DataAccess.Fee.Entities;
 using SchoolERP.DataAccess.Fee.Repositories.Interfaces;
 using SchoolERP.Business.Fee.Services.Interfaces;
 using SchoolERP.DataAccess.Storage;
+using SchoolERP.Common;
 using SchoolERP.Common.Events;
 
 namespace SchoolERP.Business.Fee.Services;
@@ -249,7 +250,9 @@ public class FeePaymentService : IFeePaymentService
 
     public async Task<IReadOnlyList<FeePaymentSummary>> AssessDuesAsync(Guid studentId, AssessDuesRequest request, CancellationToken ct = default)
     {
-        var structures = await _structures.FindByClassAsync(request.ClassId, request.AcademicYear, ct);
+        // Match the year by meaning: older structures may say "2026-2027" for "2026-27".
+        var structures = (await _structures.FindByClassAsync(request.ClassId, null, ct))
+            .Where(s => AcademicYears.Same(s.AcademicYear, request.AcademicYear)).ToList();
         var existing = await _payments.FindByStudentAsync(studentId, ct);
         var existingStructureIds = existing.Where(p => p.FeeStructureId.HasValue).Select(p => p.FeeStructureId!.Value).ToHashSet();
         var hasOpeningBalance = existing.Any(p => p.FeeStructureId is null);

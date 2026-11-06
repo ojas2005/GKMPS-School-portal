@@ -3,53 +3,82 @@ using System.ComponentModel.DataAnnotations;
 
 namespace SchoolERP.Business.Student.DTOs;
 
+// Admission. Students have no login: the parent's login (created first, role Parent) is how
+// the family follows attendance, marks and fees. Both parents' name and mobile are required.
 public record CreateStudentRequest(
-    [Required] Guid LinkedUserId,
-    [Required] string AdmissionNumber,
-    [Required] string FullName,
-    [Required] DateTime DateOfBirth,
-    [Required] string Gender,
-    [Required] string ClassId,
-    [Required] string SectionId,
-    string? ParentName,
-    [EmailAddress] string? ParentEmail,
-    string? ParentPhone,
-    string? Address,
-    Guid? ParentUserId = null);
+    [Required, Display(Name = "Admission number")] string AdmissionNumber,
+    [Required, StringLength(200), Display(Name = "Student's name")] string FullName,
+    [Required, Display(Name = "Date of birth")] DateTime DateOfBirth,
+    [Required, Display(Name = "Gender")] string Gender,
+    [Required, Display(Name = "Class")] string ClassId,
+    [Required, Display(Name = "Section")] string SectionId,
+    [Required, Display(Name = "Parent login")] Guid ParentUserId,
+    [Required, StringLength(200, MinimumLength = 2), Display(Name = "Father's name")] string FatherName,
+    [Required, IndianMobile, Display(Name = "Father's mobile number")] string FatherPhone,
+    [EmailAddress, StringLength(256), Display(Name = "Father's email")] string? FatherEmail,
+    [Required, StringLength(200, MinimumLength = 2), Display(Name = "Mother's name")] string MotherName,
+    [Required, IndianMobile, Display(Name = "Mother's mobile number")] string MotherPhone,
+    [EmailAddress, StringLength(256), Display(Name = "Mother's email")] string? MotherEmail,
+    [StringLength(500), Display(Name = "Address")] string? Address,
+    // Fees still owed from before (an earlier school or year), on top of this class's fees.
+    [Range(0, 10_000_000), Display(Name = "Previous dues")] decimal? PreviousDues = null);
 
 public record ReassignClassRequest([Required] string ClassId, [Required] string SectionId);
 
-// Full edit of everything collected at admission (except login credentials, which live in
-// the Identity module and are handled by the separate admin password-reset flow).
+// Full edit of everything collected at admission (except the parent's login, which lives in
+// the Identity module and is handled by the admin password-reset flow).
 public record UpdateStudentRequest(
-    [Required] string AdmissionNumber,
-    [Required] string FullName,
-    [Required] DateTime DateOfBirth,
-    [Required] string Gender,
-    [Required] string ClassId,
-    [Required] string SectionId,
-    string? ParentName,
-    [EmailAddress] string? ParentEmail,
-    string? ParentPhone,
-    string? Address);
+    [Required, Display(Name = "Admission number")] string AdmissionNumber,
+    [Required, StringLength(200), Display(Name = "Student's name")] string FullName,
+    [Required, Display(Name = "Date of birth")] DateTime DateOfBirth,
+    [Required, Display(Name = "Gender")] string Gender,
+    [Required, Display(Name = "Class")] string ClassId,
+    [Required, Display(Name = "Section")] string SectionId,
+    [Required, StringLength(200, MinimumLength = 2), Display(Name = "Father's name")] string FatherName,
+    [Required, IndianMobile, Display(Name = "Father's mobile number")] string FatherPhone,
+    [EmailAddress, StringLength(256), Display(Name = "Father's email")] string? FatherEmail,
+    [Required, StringLength(200, MinimumLength = 2), Display(Name = "Mother's name")] string MotherName,
+    [Required, IndianMobile, Display(Name = "Mother's mobile number")] string MotherPhone,
+    [EmailAddress, StringLength(256), Display(Name = "Mother's email")] string? MotherEmail,
+    [StringLength(500), Display(Name = "Address")] string? Address);
 
 public record StudentSummary(
-    Guid Id, Guid LinkedUserId, string AdmissionNumber, string FullName, DateTime? DateOfBirth, string? Gender,
+    Guid Id, Guid? LinkedUserId, string AdmissionNumber, string FullName, DateTime? DateOfBirth, string? Gender,
     string ClassId, string SectionId, string Status, DateTime AdmissionDateUtc,
-    string? ParentName, string? ParentEmail, string? ParentPhone, string? Address, Guid? ParentUserId = null)
+    string? FatherName, string? FatherPhone, string? FatherEmail,
+    string? MotherName, string? MotherPhone, string? MotherEmail,
+    string? ParentName, string? ParentEmail, string? ParentPhone, string? Address, Guid? ParentUserId = null,
+    DateTime? RemovedAtUtc = null, string? RemovalReason = null)
 {
     /// <summary>
     /// This record trimmed to what a caller may see (see SchoolERP.Common.StudentAccess):
     /// the directory view keeps only who and where the child is; the contact view adds the
-    /// parent's contact details; the full profile is returned as-is.
+    /// parents' contact details; the full profile is returned as-is.
     /// </summary>
     public StudentSummary ViewAs(StudentRecord view) => view switch
     {
         StudentRecord.Profile => this,
-        StudentRecord.Contact => this with { DateOfBirth = null, Gender = null, Address = null, ParentUserId = null },
-        _ => this with { DateOfBirth = null, Gender = null, Address = null, ParentUserId = null, ParentName = null, ParentEmail = null, ParentPhone = null }
+        StudentRecord.Contact => this with { DateOfBirth = null, Gender = null, Address = null, ParentUserId = null, RemovalReason = null },
+        _ => this with
+        {
+            DateOfBirth = null, Gender = null, Address = null, ParentUserId = null, RemovalReason = null,
+            FatherName = null, FatherPhone = null, FatherEmail = null, MotherName = null, MotherPhone = null, MotherEmail = null,
+            ParentName = null, ParentEmail = null, ParentPhone = null
+        }
     };
 }
+
+/// <summary>What admission put on the student's fee account.</summary>
+public record AdmissionFees(
+    string AcademicYear, IReadOnlyList<AdmissionFeeLine> ClassFees, decimal PreviousDues, decimal TotalPending,
+    // Set when nothing could be assessed, e.g. no fee structure for the class this year.
+    string? Warning);
+
+public record AdmissionFeeLine(string Name, decimal Amount);
+
+public record AdmittedStudent(StudentSummary Student, AdmissionFees Fees);
+
+public record RemoveStudentRequest([StringLength(500)] string? Reason);
 
 // Links (or with null, unlinks) the Parent-role login that may view this student's records.
 public record LinkParentAccountRequest(Guid? ParentUserId);

@@ -55,12 +55,37 @@ public class StaffController : ControllerBase
         return Ok(ApiResponse<StaffSummary>.Ok(canSeePrivate ? staff : staff with { MonthlySalary = null, Phone = null, Email = null }));
     }
 
+    // status: current (default), removed or all.
     [HttpGet]
     [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Accountant}")]
-    public async Task<IActionResult> Search([FromQuery] string? designation, [FromQuery] string? keyword, [FromQuery] int page = 1, [FromQuery] int pageSize = 25, CancellationToken ct = default)
+    public async Task<IActionResult> Search([FromQuery] string? designation, [FromQuery] string? keyword, [FromQuery] string? status, [FromQuery] int page = 1, [FromQuery] int pageSize = 25, CancellationToken ct = default)
     {
-        var result = await _staffService.SearchAsync(designation, keyword, page, pageSize, ct);
+        var result = await _staffService.SearchAsync(designation, keyword, RosterFilters.Parse(status), page, pageSize, ct);
         return Ok(ApiResponse<object>.Ok(result));
+    }
+
+    // Removes a staff member (reversible): their login is switched off and they drop out of
+    // class-teacher duty and every staff list.
+    [HttpPost("{id:guid}/remove")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin}")]
+    public Task<IActionResult> Remove(Guid id, CancellationToken ct) =>
+        RosterChange(actor => _staffService.RemoveAsync(id, actor, User.Role() ?? "unknown", ct), "Staff member removed.");
+
+    [HttpPost("{id:guid}/restore")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin}")]
+    public Task<IActionResult> Restore(Guid id, CancellationToken ct) =>
+        RosterChange(actor => _staffService.RestoreAsync(id, actor, User.Role() ?? "unknown", ct), "Staff member restored. They can sign in again.");
+
+    private async Task<IActionResult> RosterChange(Func<string, Task<StaffSummary>> change, string message)
+    {
+        var actorId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? "unknown";
+        try
+        {
+            return Ok(ApiResponse<StaffSummary>.Ok(await change(actorId), message));
+        }
+        catch (KeyNotFoundException ex) { return NotFound(ApiResponse<object>.Fail(ex.Message)); }
+        catch (InvalidOperationException ex) { return BadRequest(ApiResponse<object>.Fail(ex.Message)); }
+        catch (UnauthorizedAccessException ex) { return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message)); }
     }
 
     // Make/unmake this teacher the class teacher (head teacher) of a class/section.

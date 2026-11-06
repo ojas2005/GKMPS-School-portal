@@ -1,4 +1,5 @@
 using SchoolERP.Business.Fee.DTOs;
+using SchoolERP.Common;
 using SchoolERP.DataAccess.Fee.Entities;
 using SchoolERP.DataAccess.Fee.Repositories.Interfaces;
 using SchoolERP.Business.Fee.Services.Interfaces;
@@ -18,7 +19,7 @@ public class FeeStructureService : IFeeStructureService
             ClassId = request.ClassId,
             Name = request.Name,
             Amount = request.Amount,
-            AcademicYear = request.AcademicYear,
+            AcademicYear = AcademicYears.Normalize(request.AcademicYear),
             DueDateUtc = request.DueDateUtc
         };
 
@@ -30,8 +31,9 @@ public class FeeStructureService : IFeeStructureService
 
     public async Task<IReadOnlyList<FeeStructureSummary>> GetByClassAsync(string? classId, string? academicYear, CancellationToken ct = default)
     {
-        var items = await _structures.FindByClassAsync(classId, academicYear, ct);
-        return items.Select(ToSummary).ToList();
+        // Older structures may spell the year differently ("2026-2027"), so match by meaning.
+        var items = await _structures.FindByClassAsync(classId, null, ct);
+        return items.Where(f => academicYear is null || AcademicYears.Same(f.AcademicYear, academicYear)).Select(ToSummary).ToList();
     }
 
     private static FeeStructureSummary ToSummary(FeeStructure f) => new(f.Id, f.ClassId, f.Name, f.Amount, f.AcademicYear, f.DueDateUtc);

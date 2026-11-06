@@ -13,7 +13,8 @@ public record CreateStaffRequest(
 public record StaffSummary(
     Guid Id, Guid LinkedUserId, string EmployeeCode, string FullName, string Designation, string Status,
     DateTime DateOfJoiningUtc, string? SubjectsTaughtCsv, string? Phone, string? Email,
-    string? ClassTeacherOfClassId, string? ClassTeacherOfSectionId, decimal? MonthlySalary);
+    string? ClassTeacherOfClassId, string? ClassTeacherOfSectionId, decimal? MonthlySalary,
+    DateTime? RemovedAtUtc = null);
 
 public record AssignClassTeacherRequest(string? ClassId, string? SectionId);
 

@@ -18,7 +18,10 @@ public class AnnouncementRepository : IAnnouncementRepository
     {
         var query = _db.Announcements.Where(a => a.ExpiresAtUtc == null || a.ExpiresAtUtc > DateTime.UtcNow);
 
-        if (!string.IsNullOrWhiteSpace(role))
+        // Students have no login, so parents read what is sent to their child's class.
+        if (role == "Parent")
+            query = query.Where(a => a.TargetRolesCsv == null || a.TargetRolesCsv == "" || a.TargetRolesCsv.Contains("Parent") || a.TargetRolesCsv.Contains("Student"));
+        else if (!string.IsNullOrWhiteSpace(role))
             query = query.Where(a => a.TargetRolesCsv == null || a.TargetRolesCsv == "" || a.TargetRolesCsv.Contains(role));
 
         if (!string.IsNullOrWhiteSpace(classId))

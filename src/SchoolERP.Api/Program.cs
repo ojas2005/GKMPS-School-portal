@@ -122,7 +122,20 @@ builder.Services.AddRateLimiter(options =>
 });
 
 // ---------- Controllers + Swagger ----------
-builder.Services.AddControllers(options => options.Filters.Add<PagingLimitsFilter>());
+builder.Services.AddControllers(options => options.Filters.Add<PagingLimitsFilter>())
+    // Invalid input gets the same shape as every other error -- a message and a flat list --
+    // so the pages can say exactly which field is wrong instead of a generic failure.
+    .ConfigureApiBehaviorOptions(options => options.InvalidModelStateResponseFactory = context =>
+    {
+        var fields = context.ModelState.Where(e => e.Value?.Errors.Count > 0).ToList();
+        // "The request field is required." only repeats that something inside it was wrong.
+        if (fields.Count > 1) fields = fields.Where(e => !string.Equals(e.Key, "request", StringComparison.OrdinalIgnoreCase)).ToList();
+        var errors = fields.SelectMany(e => e.Value!.Errors)
+            .Select(e => string.IsNullOrWhiteSpace(e.ErrorMessage) ? "Some of the information sent isn't valid." : e.ErrorMessage)
+            .Distinct().ToList();
+        return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(
+            ApiResponse<object>.Fail(errors.FirstOrDefault() ?? "Some of the information sent isn't valid.", errors));
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {

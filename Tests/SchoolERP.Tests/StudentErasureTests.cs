@@ -94,6 +94,29 @@ public class StudentErasureTests
     }
 
     [Fact]
+    public async Task A_removed_student_can_be_erased_too()
+    {
+        var f = new Fixture();
+        f.Student.Status = StudentStatuses.Removed;
+
+        await f.Erase("ADM-2024-017");
+        Assert.Equal(1, f.Students.Count("AnonymizeAsync"));
+    }
+
+    [Fact]
+    public async Task A_student_without_a_login_of_their_own_is_erased_with_the_parent_login()
+    {
+        var f = new Fixture();
+        f.Student.LinkedUserId = null;
+
+        var result = await f.Erase("ADM-2024-017");
+
+        Assert.False(result.StudentLoginErased);
+        Assert.True(result.ParentLoginErased);
+        Assert.Equal(f.Student.ParentUserId, f.Users.Calls.Single(c => c.Method == "ErasePersonalDataAsync").Args[0]);
+    }
+
+    [Fact]
     public async Task The_admission_number_must_be_typed_to_confirm()
     {
         var f = new Fixture();
