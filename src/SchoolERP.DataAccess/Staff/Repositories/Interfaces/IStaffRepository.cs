@@ -1,3 +1,4 @@
+using SchoolERP.Common;
 using SchoolERP.DataAccess.Staff.Entities;
 
 namespace SchoolERP.DataAccess.Staff.Repositories.Interfaces;
@@ -7,12 +8,12 @@ public interface IStaffRepository
     Task<StaffProfile?> FindByIdAsync(Guid id, CancellationToken ct = default);
     Task<StaffProfile?> FindByEmployeeCodeAsync(string employeeCode, CancellationToken ct = default);
     Task<StaffProfile?> FindByLinkedUserAsync(Guid linkedUserId, CancellationToken ct = default);
-    Task<IReadOnlyList<StaffProfile>> SearchAsync(string? designation, string? keyword, int page, int pageSize, CancellationToken ct = default);
-    Task<int> CountAsync(string? designation, CancellationToken ct = default);
+    Task<IReadOnlyList<StaffProfile>> SearchAsync(string? designation, string? keyword, RosterFilter roster, int page, int pageSize, CancellationToken ct = default);
+    Task<int> CountAsync(string? designation, string? keyword, RosterFilter roster, CancellationToken ct = default);
     Task<bool> ExistsByEmployeeCodeAsync(string employeeCode, CancellationToken ct = default);
     Task AddAsync(StaffProfile staff, CancellationToken ct = default);
 
-    /// <summary>Atomic status transition (Active/OnLeave/Suspended/Resigned).</summary>
+    /// <summary>Atomic status transition (see <see cref="StaffStatuses"/>); Removed also stamps RemovedAtUtc.</summary>
     Task<int> UpdateStatusAsync(Guid staffId, string status, CancellationToken ct = default);
 
     /// <summary>Atomic class-teacher (head teacher) assignment; pass nulls to unassign.</summary>

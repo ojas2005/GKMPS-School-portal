@@ -9,18 +9,16 @@ public class StudentEnrolledHandler : IEventHandler<StudentEnrolledEvent>
 
     public StudentEnrolledHandler(INotificationService notificationService) => _notificationService = notificationService;
 
-    public Task HandleAsync(StudentEnrolledEvent e, CancellationToken ct)
+    public async Task HandleAsync(StudentEnrolledEvent e, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(e.ParentEmail))
-            return Task.CompletedTask;
-
-        return _notificationService.DispatchAsync(
-            eventType: "StudentEnrolled",
-            recipientReference: e.ParentEmail,
-            channel: "Email",
-            subjectOrTitle: "Admission Confirmed",
-            body: $"{e.FullName} (Admission No. {e.AdmissionNumber}) has been admitted. Welcome to the school!",
-            payload: e,
-            ct: ct);
+        foreach (var email in e.ParentEmails)
+            await _notificationService.DispatchAsync(
+                eventType: "StudentEnrolled",
+                recipientReference: email,
+                channel: "Email",
+                subjectOrTitle: "Admission Confirmed",
+                body: $"{e.FullName} (Admission No. {e.AdmissionNumber}) has been admitted. Welcome to the school!",
+                payload: e,
+                ct: ct);
     }
 }

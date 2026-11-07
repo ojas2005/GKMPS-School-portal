@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SchoolERP.Common;
 using SchoolERP.DataAccess.Staff;
 using SchoolERP.DataAccess.Staff.Entities;
 using SchoolERP.DataAccess.Staff.Repositories.Interfaces;
@@ -17,21 +18,25 @@ public class StaffRepository : IStaffRepository
     public Task<StaffProfile?> FindByEmployeeCodeAsync(string employeeCode, CancellationToken ct = default) =>
         _db.Staff.FirstOrDefaultAsync(s => s.EmployeeCode == employeeCode, ct);
 
-    public async Task<IReadOnlyList<StaffProfile>> SearchAsync(string? designation, string? keyword, int page, int pageSize, CancellationToken ct = default)
+    public async Task<IReadOnlyList<StaffProfile>> SearchAsync(string? designation, string? keyword, RosterFilter roster, int page, int pageSize, CancellationToken ct = default) =>
+        await Filtered(designation, keyword, roster).OrderBy(s => s.FullName).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+
+    public Task<int> CountAsync(string? designation, string? keyword, RosterFilter roster, CancellationToken ct = default) =>
+        Filtered(designation, keyword, roster).CountAsync(ct);
+
+    private IQueryable<StaffProfile> Filtered(string? designation, string? keyword, RosterFilter roster)
     {
         var query = _db.Staff.AsQueryable();
+        query = roster switch
+        {
+            RosterFilter.Current => query.Where(s => s.Status != StaffStatuses.Removed),
+            RosterFilter.Removed => query.Where(s => s.Status == StaffStatuses.Removed),
+            _ => query
+        };
         if (!string.IsNullOrWhiteSpace(designation)) query = query.Where(s => s.Designation == designation);
         if (!string.IsNullOrWhiteSpace(keyword))
             query = query.Where(s => EF.Functions.Like(s.FullName, $"%{keyword}%") || EF.Functions.Like(s.EmployeeCode, $"%{keyword}%"));
-
-        return await query.OrderBy(s => s.FullName).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
-    }
-
-    public Task<int> CountAsync(string? designation, CancellationToken ct = default)
-    {
-        var query = _db.Staff.AsQueryable();
-        if (!string.IsNullOrWhiteSpace(designation)) query = query.Where(s => s.Designation == designation);
-        return query.CountAsync(ct);
+        return query;
     }
 
     public Task<bool> ExistsByEmployeeCodeAsync(string employeeCode, CancellationToken ct = default) =>
@@ -44,6 +49,7 @@ public class StaffRepository : IStaffRepository
         _db.Staff.Where(s => s.Id == staffId)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(s => s.Status, status)
+                .SetProperty(s => s.RemovedAtUtc, status == StaffStatuses.Removed ? DateTime.UtcNow : null)
                 .SetProperty(s => s.UpdatedAtUtc, DateTime.UtcNow), ct);
 
     public Task<StaffProfile?> FindByLinkedUserAsync(Guid linkedUserId, CancellationToken ct = default) =>

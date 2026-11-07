@@ -25,6 +25,14 @@ public class StudentDbContext : DbContext
             entity.HasIndex(s => s.ParentUserId);
             entity.Property(s => s.AdmissionNumber).HasMaxLength(50).IsRequired();
             entity.Property(s => s.FullName).HasMaxLength(200).IsRequired();
+            entity.Property(s => s.FatherName).HasMaxLength(200);
+            entity.Property(s => s.MotherName).HasMaxLength(200);
+            entity.Property(s => s.FatherPhone).HasMaxLength(20);
+            entity.Property(s => s.MotherPhone).HasMaxLength(20);
+            entity.Property(s => s.FatherEmail).HasMaxLength(256);
+            entity.Property(s => s.MotherEmail).HasMaxLength(256);
+            entity.Property(s => s.RemovalReason).HasMaxLength(500);
+            entity.HasIndex(s => s.Status);
             entity.HasQueryFilter(s => !s.IsDeleted);
         });
 

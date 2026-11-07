@@ -19,8 +19,11 @@ public class StaffProfile : BaseEntity
     public string? Phone { get; set; }
     public string? Email { get; set; }
 
-    /// <summary>Active | OnLeave | Suspended | Resigned.</summary>
-    public string Status { get; set; } = "Active";
+    /// <summary>One of <see cref="StaffStatuses"/>.</summary>
+    public string Status { get; set; } = StaffStatuses.Active;
+
+    /// <summary>When the school removed this staff member (status Removed).</summary>
+    public DateTime? RemovedAtUtc { get; set; }
 
     /// <summary>Set when this teacher is the class teacher (head teacher) of a class/section.
     /// Only the class teacher of class X may upload class X's attendance; the Identity module embeds
@@ -32,4 +35,11 @@ public class StaffProfile : BaseEntity
     /// salary for the current calendar month = MonthlySalary minus payouts recorded this
     /// month; null means no salary has been defined yet.</summary>
     public decimal? MonthlySalary { get; set; }
+}
+
+public static class StaffStatuses
+{
+    public const string Active = "Active";
+    /// <summary>No longer with the school: their login is switched off and they leave every list.</summary>
+    public const string Removed = "Removed";
 }

@@ -23,6 +23,10 @@ namespace SchoolERP.Business.Identity.Services;
 /// </summary>
 public class AuthService : IAuthService
 {
+    // Students don't sign in; their parents do, and see attendance, marks and fees for them.
+    private const string StudentLoginsClosed =
+        "Students don't have their own login. A parent signs in to see attendance, marks and fees.";
+
     private readonly IUserRepository _users;
     private readonly IRefreshTokenRepository _refreshTokens;
     private readonly ISessionService _sessions;
@@ -102,6 +106,8 @@ public class AuthService : IAuthService
 
         if (!RoleNames.All.Contains(request.Role))
             throw new InvalidOperationException($"'{request.Role}' is not a recognized role.");
+        if (request.Role == RoleNames.Student)
+            throw new InvalidOperationException(StudentLoginsClosed);
 
         var username = string.IsNullOrWhiteSpace(request.Username) ? null : request.Username.Trim();
         if (username is not null && await _users.ExistsByUsernameAsync(username, ct))
@@ -212,6 +218,11 @@ public class AuthService : IAuthService
             Audit("auth.login.deactivated", user, ipAddress);
             throw new UnauthorizedAccessException("This account has been deactivated. Contact the school office.");
         }
+        if (user.Role == RoleNames.Student)
+        {
+            Audit("auth.login.student-closed", user, ipAddress);
+            throw new UnauthorizedAccessException(StudentLoginsClosed);
+        }
 
         _challenges.Remove(pauseKey);
         await _users.ResetFailedLoginAsync(user.Id, ct);
@@ -316,7 +327,7 @@ public class AuthService : IAuthService
         var user = storedToken.User ?? await _users.FindByIdAsync(storedToken.UserId, ct)
             ?? throw new UnauthorizedAccessException("The account no longer exists.");
 
-        if (!user.IsActive)
+        if (!user.IsActive || user.Role == RoleNames.Student)
             throw new UnauthorizedAccessException("This account has been deactivated.");
 
         // The session must still be alive: not signed out, not idle too long, not past its cap.

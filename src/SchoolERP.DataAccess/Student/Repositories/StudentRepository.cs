@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SchoolERP.Common;
 using SchoolERP.DataAccess.Student;
 using SchoolERP.DataAccess.Student.Entities;
 using SchoolERP.DataAccess.Student.Repositories.Interfaces;
@@ -17,40 +18,42 @@ public class StudentRepository : IStudentRepository
     public Task<StudentProfile?> FindByLinkedUserAsync(Guid userId, CancellationToken ct = default) =>
         _db.Students.AsNoTracking().FirstOrDefaultAsync(s => s.LinkedUserId == userId, ct);
 
+    // A current child first, should the login also be linked to one who has left.
     public Task<StudentProfile?> FindByParentUserAsync(Guid parentUserId, CancellationToken ct = default) =>
-        _db.Students.AsNoTracking().FirstOrDefaultAsync(s => s.ParentUserId == parentUserId, ct);
+        _db.Students.AsNoTracking()
+            .Where(s => s.ParentUserId == parentUserId)
+            .OrderBy(s => s.Status == StudentStatuses.Active ? 0 : 1)
+            .FirstOrDefaultAsync(ct);
 
     public Task<StudentProfile?> FindByAdmissionNumberAsync(string admissionNumber, CancellationToken ct = default) =>
         _db.Students.FirstOrDefaultAsync(s => s.AdmissionNumber == admissionNumber, ct);
 
-    public async Task<IReadOnlyList<StudentProfile>> SearchStudentsAsync(string? classId, string? sectionId, string? keyword, int page, int pageSize, CancellationToken ct = default)
-    {
-        var query = _db.Students.AsQueryable();
-
-        if (!string.IsNullOrWhiteSpace(classId))
-            query = query.Where(s => s.ClassId == classId);
-
-        if (!string.IsNullOrWhiteSpace(sectionId))
-            query = query.Where(s => s.SectionId == sectionId);
-
-        if (!string.IsNullOrWhiteSpace(keyword))
-            query = query.Where(s =>
-                EF.Functions.Like(s.FullName, $"%{keyword}%") ||
-                EF.Functions.Like(s.AdmissionNumber, $"%{keyword}%"));
-
-        return await query
+    public async Task<IReadOnlyList<StudentProfile>> SearchStudentsAsync(string? classId, string? sectionId, string? keyword, RosterFilter roster, int page, int pageSize, CancellationToken ct = default) =>
+        await Filtered(classId, sectionId, keyword, roster)
             .OrderBy(s => s.FullName)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
-    }
 
-    public Task<int> CountStudentsAsync(string? classId, string? sectionId, CancellationToken ct = default)
+    public Task<int> CountStudentsAsync(string? classId, string? sectionId, string? keyword, RosterFilter roster, CancellationToken ct = default) =>
+        Filtered(classId, sectionId, keyword, roster).CountAsync(ct);
+
+    private IQueryable<StudentProfile> Filtered(string? classId, string? sectionId, string? keyword, RosterFilter roster)
     {
         var query = _db.Students.AsQueryable();
+        query = roster switch
+        {
+            RosterFilter.Current => query.Where(s => s.Status == StudentStatuses.Active),
+            RosterFilter.Removed => query.Where(s => s.Status != StudentStatuses.Active),
+            _ => query
+        };
         if (!string.IsNullOrWhiteSpace(classId)) query = query.Where(s => s.ClassId == classId);
         if (!string.IsNullOrWhiteSpace(sectionId)) query = query.Where(s => s.SectionId == sectionId);
-        return query.CountAsync(ct);
+        if (!string.IsNullOrWhiteSpace(keyword))
+            query = query.Where(s =>
+                EF.Functions.Like(s.FullName, $"%{keyword}%") ||
+                EF.Functions.Like(s.AdmissionNumber, $"%{keyword}%"));
+        return query;
     }
 
     public Task<bool> ExistsByAdmissionNumberAsync(string admissionNumber, CancellationToken ct = default) =>
@@ -77,6 +80,13 @@ public class StudentRepository : IStudentRepository
                 .SetProperty(s => s.ParentName, (string?)null)
                 .SetProperty(s => s.ParentEmail, (string?)null)
                 .SetProperty(s => s.ParentPhone, (string?)null)
+                .SetProperty(s => s.FatherName, (string?)null)
+                .SetProperty(s => s.FatherPhone, (string?)null)
+                .SetProperty(s => s.FatherEmail, (string?)null)
+                .SetProperty(s => s.MotherName, (string?)null)
+                .SetProperty(s => s.MotherPhone, (string?)null)
+                .SetProperty(s => s.MotherEmail, (string?)null)
+                .SetProperty(s => s.RemovalReason, (string?)null)
                 .SetProperty(s => s.Address, (string?)null)
                 .SetProperty(s => s.ParentUserId, (Guid?)null)
                 .SetProperty(s => s.Status, StudentStatuses.Erased)
@@ -84,6 +94,18 @@ public class StudentRepository : IStudentRepository
 
     public Task<int> CountOtherChildrenOfParentAsync(Guid parentUserId, Guid exceptStudentId, CancellationToken ct = default) =>
         _db.Students.CountAsync(s => s.ParentUserId == parentUserId && s.Id != exceptStudentId && s.Status != StudentStatuses.Erased, ct);
+
+    public Task<int> CountOtherCurrentChildrenOfParentAsync(Guid parentUserId, Guid exceptStudentId, CancellationToken ct = default) =>
+        _db.Students.CountAsync(s => s.ParentUserId == parentUserId && s.Id != exceptStudentId && s.Status == StudentStatuses.Active, ct);
+
+    public Task<int> SetRemovedAsync(Guid studentId, bool removed, string? reason, CancellationToken ct = default) =>
+        _db.Students
+            .Where(s => s.Id == studentId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(s => s.Status, removed ? StudentStatuses.Removed : StudentStatuses.Active)
+                .SetProperty(s => s.RemovedAtUtc, removed ? DateTime.UtcNow : null)
+                .SetProperty(s => s.RemovalReason, removed ? reason : null)
+                .SetProperty(s => s.UpdatedAtUtc, DateTime.UtcNow), ct);
 
     public Task<int> UpdateStatusAsync(Guid studentId, string status, DateTime? transferredOutAtUtc, CancellationToken ct = default) =>
         _db.Students
@@ -97,7 +119,7 @@ public class StudentRepository : IStudentRepository
     {
         // Aggregate query via GroupBy/Count executed in PostgreSQL -- rows never materialize in app memory.
         var grouped = await _db.Students
-            .Where(s => s.Status == "Active")
+            .Where(s => s.Status == StudentStatuses.Active)
             .GroupBy(s => s.ClassId)
             .Select(g => new { ClassId = g.Key, Count = g.Count() })
             .ToListAsync(ct);
