@@ -16,18 +16,24 @@ public class StudentsController : ControllerBase
 
     public StudentsController(IStudentService studentService) => _studentService = studentService;
 
+    // Admission: the student record, their route and their fee account with its first fees --
+    // all of it, or (if any step fails) none of it. See AdmissionService.
     [HttpPost]
     [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin}")]
-    public async Task<IActionResult> Admit([FromBody] CreateStudentRequest request, CancellationToken ct)
+    public async Task<IActionResult> Admit([FromBody] CreateStudentRequest request, [FromServices] SchoolERP.Business.Admissions.AdmissionService admissions, CancellationToken ct)
     {
         try
         {
-            var result = await _studentService.AdmitStudentAsync(request, ct);
+            var result = await admissions.AdmitAsync(request, User.UserId(), User.Role(), ct);
             return CreatedAtAction(nameof(GetById), new { id = result.Student.Id }, ApiResponse<AdmittedStudent>.Ok(result, "Student admitted."));
         }
         catch (InvalidOperationException ex)
         {
             return Conflict(ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.Message));
         }
     }
 

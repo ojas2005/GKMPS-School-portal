@@ -15,11 +15,16 @@ public class RouteRepository : IRouteRepository
         _db.Routes.FirstOrDefaultAsync(r => r.Id == id, ct);
 
     public Task<IReadOnlyList<RouteEntity>> GetAllAsync(CancellationToken ct = default) =>
-        _db.Routes.OrderBy(r => r.Name).ToListAsync(ct)
+        _db.Routes.OrderByDescending(r => r.IsActive).ThenBy(r => r.Name.Length).ThenBy(r => r.Name).ToListAsync(ct)
             .ContinueWith(t => (IReadOnlyList<RouteEntity>)t.Result, ct);
+
+    public Task<bool> AnyAsync(CancellationToken ct = default) => _db.Routes.AnyAsync(ct);
 
     public async Task AddAsync(RouteEntity route, CancellationToken ct = default) =>
         await _db.Routes.AddAsync(route, ct);
+
+    public async Task AddRangeAsync(IEnumerable<RouteEntity> routes, CancellationToken ct = default) =>
+        await _db.Routes.AddRangeAsync(routes, ct);
 
     public Task<int> SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
 }

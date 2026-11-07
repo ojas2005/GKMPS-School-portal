@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using QuestPDF.Fluent;
 using SchoolERP.Business.Fee.Documents;
 using SchoolERP.Business.Fee.DTOs;
+using SchoolERP.Business.Student.Services.Interfaces;
 using SchoolERP.DataAccess.Fee.Entities;
 using SchoolERP.DataAccess.Fee.Repositories.Interfaces;
 using SchoolERP.Business.Fee.Services.Interfaces;
@@ -12,18 +13,22 @@ using SchoolERP.Common.Events;
 namespace SchoolERP.Business.Fee.Services;
 
 /// <summary>
-/// Every payment: creates (or reuses) the FeePayment tracker row, appends an immutable
-/// PaymentTransaction ledger entry, atomically bumps PaidAmount via ExecuteUpdateAsync,
-/// generates a QuestPDF receipt uploaded to Blob (SAS-delivered), and publishes
-/// FeePaidEvent for the Notification module to react to.
+/// Every payment: appends an immutable PaymentTransaction ledger entry and bumps the fee's
+/// PaidAmount in one database transaction -- the bump is guarded, so a fee can never be paid
+/// beyond what it still owes -- then publishes FeePaidEvent. Receipts are QuestPDF documents
+/// made on first download and kept in storage. Concessions and approved waivers go through the
+/// same kind of guarded update and are written to the fee history.
 /// </summary>
 public class FeePaymentService : IFeePaymentService
 {
     private readonly IFeePaymentRepository _payments;
     private readonly IFeeStructureRepository _structures;
     private readonly IPaymentTransactionRepository _transactions;
+    private readonly IFeeAccountRepository _accounts;
+    private readonly IStudentService _students;
     private readonly IBlobStorageService _blobStorage;
     private readonly IEventPublisher _events;
+    private readonly TimeProvider _clock;
     private readonly ILogger<FeePaymentService> _logger;
     private readonly string _schoolName;
 
@@ -33,30 +38,39 @@ public class FeePaymentService : IFeePaymentService
         IFeePaymentRepository payments,
         IFeeStructureRepository structures,
         IPaymentTransactionRepository transactions,
+        IFeeAccountRepository accounts,
+        IStudentService students,
         IBlobStorageService blobStorage,
         IEventPublisher events,
         IConfiguration configuration,
+        TimeProvider clock,
         ILogger<FeePaymentService> logger)
     {
         _payments = payments;
         _structures = structures;
         _transactions = transactions;
+        _accounts = accounts;
+        _students = students;
         _blobStorage = blobStorage;
         _events = events;
+        _clock = clock;
         _logger = logger;
         _schoolName = configuration["School:Name"] ?? "School";
     }
 
+    private DateTime Today => SchoolClock.Today(_clock);
+
     public async Task<FeePaymentSummary> RecordPaymentAsync(RecordPaymentRequest request, CancellationToken ct = default)
     {
-        // Two ways to identify what's being paid: a specific due row directly (needed for
-        // ad-hoc dues like an opening balance, which have no FeeStructure), or the
-        // class-structure it's linked to (existing behavior -- creates the row on first payment).
+        // Two ways to identify what's being paid: a specific fee directly (the normal way), or
+        // an older class fee structure it's linked to (creates the row on first payment).
         FeePayment? payment;
         if (request.FeePaymentId.HasValue)
         {
             payment = await _payments.FindByIdAsync(request.FeePaymentId.Value, ct)
                 ?? throw new KeyNotFoundException("Fee due not found.");
+            if (payment.StudentId != request.StudentId)
+                throw new InvalidOperationException("That fee belongs to a different student.");
         }
         else
         {
@@ -74,6 +88,9 @@ public class FeePaymentService : IFeePaymentService
                     StudentId = request.StudentId,
                     FeeStructureId = structure.Id,
                     ClassId = structure.ClassId,
+                    AcademicYear = structure.AcademicYear,
+                    PeriodLabel = structure.Name.Length <= 50 ? structure.Name : structure.Name[..50],
+                    DueDate = structure.DueDateUtc.Date,
                     TotalAmount = structure.Amount
                 };
                 await _payments.AddAsync(payment, ct);
@@ -90,17 +107,8 @@ public class FeePaymentService : IFeePaymentService
 
     public async Task<FeeSubmissionResult> SubmitPaymentAsync(Guid studentId, SubmitFeePaymentRequest request, CancellationToken ct = default)
     {
-        // Always a brand-new ad-hoc due -- the owner is logging money received for a
-        // custom period, not paying down an existing FeeStructure-linked due.
-        var payment = new FeePayment
-        {
-            StudentId = studentId,
-            FeeStructureId = null,
-            ClassId = request.ClassId,
-            PeriodLabel = request.PeriodLabel,
-            Description = request.Description,
-            TotalAmount = request.Amount
-        };
+        // Always a brand-new charge for a custom period, paid in the same step.
+        var payment = NewManualCharge(studentId, request.ClassId, request.Amount, request.PeriodLabel, request.Description, Today);
         await _payments.AddAsync(payment, ct);
         await _payments.SaveChangesAsync(ct);
 
@@ -112,47 +120,93 @@ public class FeePaymentService : IFeePaymentService
         return new FeeSubmissionResult(ToSummary(payment), transaction.Id, transaction.ReceiptNumber);
     }
 
-    public async Task<FeePaymentSummary> AddAdHocDueAsync(Guid studentId, AddAdHocDueRequest request, CancellationToken ct = default)
+    public async Task<FeePaymentSummary> AddAdHocDueAsync(Guid studentId, AddAdHocDueRequest request, Guid? actorUserId = null, string? actorRole = null, CancellationToken ct = default)
     {
-        // Unlike SubmitPaymentAsync, no AppendTransactionAsync call -- nothing was paid,
-        // so PaidAmount stays at its default 0 and no transaction/receipt/event is produced.
-        var payment = new FeePayment
-        {
-            StudentId = studentId,
-            FeeStructureId = null,
-            ClassId = request.ClassId,
-            PeriodLabel = request.PeriodLabel,
-            Description = request.Description,
-            TotalAmount = request.Amount
-        };
+        // Nothing was paid: PaidAmount stays 0 and no transaction, receipt or event is produced.
+        var payment = NewManualCharge(studentId, request.ClassId, request.Amount, request.PeriodLabel, request.Description, (request.DueDate ?? Today).Date);
         await _payments.AddAsync(payment, ct);
+        await _accounts.AddAdjustmentAsync(new FeeAdjustment
+        {
+            StudentId = studentId, FeePaymentId = payment.Id, Kind = FeeAdjustmentKinds.ChargeAdded, Amount = request.Amount,
+            Reason = request.Description ?? request.PeriodLabel, ActorUserId = actorUserId, ActorRole = actorRole
+        }, ct);
         await _payments.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Ad-hoc due added: amount={Amount} period={Period} student={StudentId}",
+        _logger.LogInformation("Charge added: amount={Amount} period={Period} student={StudentId}",
             request.Amount, request.PeriodLabel, studentId);
 
         return ToSummary(payment);
     }
 
-    /// <summary>Shared by RecordPaymentAsync/SubmitPaymentAsync: appends the immutable ledger
-    /// entry, atomically bumps PaidAmount, and publishes FeePaidEvent for Reporting/Notification.</summary>
+    private static FeePayment NewManualCharge(Guid studentId, string classId, decimal amount, string periodLabel, string? description, DateTime dueDate) => new()
+    {
+        StudentId = studentId,
+        ClassId = classId,
+        Category = FeeCategories.Other,
+        AcademicYear = AcademicYears.Format(FeeBillingPlanner.SessionStartYear(dueDate)),
+        PeriodLabel = periodLabel,
+        Description = description,
+        DueDate = dueDate,
+        TotalAmount = amount
+    };
+
+    public async Task<FeePaymentSummary> ApplyConcessionAsync(Guid feePaymentId, ConcessionRequest request, Guid? actorUserId, string? actorRole, CancellationToken ct = default)
+    {
+        var payment = await _payments.FindByIdAsync(feePaymentId, ct) ?? throw new KeyNotFoundException("Fee not found.");
+        var outstanding = FeeMath.Pending(payment);
+        if (request.Amount > outstanding)
+            throw new InvalidOperationException($"That's more than the ₹{outstanding:0.##} still owed on this fee.");
+
+        await using var tx = await _payments.BeginTransactionAsync(ct);
+        if (await _payments.AddDiscountAsync(feePaymentId, request.Amount, ct) == 0)
+            throw new InvalidOperationException("This fee changed meanwhile; reload and try again.");
+        await _accounts.AddAdjustmentAsync(new FeeAdjustment
+        {
+            StudentId = payment.StudentId, FeePaymentId = payment.Id, Kind = FeeAdjustmentKinds.Concession,
+            Amount = request.Amount, Reason = request.Reason.Trim(), ActorUserId = actorUserId, ActorRole = actorRole
+        }, ct);
+        await _accounts.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        payment.WaiverAmount += request.Amount;
+        _logger.LogInformation("AUDIT actor={ActorUserId} action=FeePayment.Concession entity=FeePayment entityId={FeePaymentId} amount={Amount}",
+            actorUserId, feePaymentId, request.Amount);
+        return ToSummary(payment);
+    }
+
+    /// <summary>Appends the immutable ledger entry and bumps PaidAmount in one transaction, then
+    /// publishes FeePaidEvent. Refuses an amount larger than what the fee still owes.</summary>
     private async Task<PaymentTransaction> AppendTransactionAsync(FeePayment payment, decimal amount, string paymentMethod, string? gatewayReference, CancellationToken ct)
     {
-        var receiptNumber = GenerateReceiptNumber();
+        if (amount <= 0)
+            throw new InvalidOperationException("The amount must be more than zero.");
+
+        var paidAtUtc = DateTime.UtcNow;
         var transaction = new PaymentTransaction
         {
             FeePaymentId = payment.Id,
             Amount = amount,
-            ReceiptNumber = receiptNumber,
+            ReceiptNumber = GenerateReceiptNumber(),
             PaymentMethod = paymentMethod,
-            GatewayReference = gatewayReference
+            GatewayReference = gatewayReference,
+            PaidAtUtc = paidAtUtc
         };
-        await _transactions.AddAsync(transaction, ct);
-        await _transactions.SaveChangesAsync(ct);
 
-        // Atomic increment -- never load PaidAmount, add in C#, and save the whole row back.
-        await _payments.IncrementPaidAmountAsync(payment.Id, amount, ct);
+        await using (var tx = await _payments.BeginTransactionAsync(ct))
+        {
+            // Guarded, atomic increment -- never load PaidAmount, add in C#, and save the row back.
+            if (await _payments.IncrementPaidAmountAsync(payment.Id, amount, paidAtUtc, ct) == 0)
+            {
+                var current = await _payments.FindByIdAsync(payment.Id, ct);
+                throw new InvalidOperationException(
+                    $"That's more than the ₹{(current is null ? 0 : FeeMath.Pending(current)):0.##} still owed on this fee.");
+            }
+            await _transactions.AddAsync(transaction, ct);
+            await _transactions.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+        }
         payment.PaidAmount += amount;
+        payment.LastPaidAtUtc = paidAtUtc;
 
         // Raised only after the payment is recorded; the notification handler confirms it.
         await _events.PublishAsync(new FeePaidEvent
@@ -161,17 +215,18 @@ public class FeePaymentService : IFeePaymentService
             StudentId = payment.StudentId,
             AmountPaid = amount,
             Currency = "INR",
-            ReceiptNumber = receiptNumber
+            ReceiptNumber = transaction.ReceiptNumber
         }, ct);
 
         return transaction;
     }
 
-    /// <summary>Everything a student still owes across all their dues (never negative).</summary>
+    /// <summary>Everything a student owes now (fees already due), never negative.</summary>
     private async Task<decimal> GetTotalPendingForStudentAsync(Guid studentId, CancellationToken ct)
     {
+        var today = Today;
         var dues = await _payments.FindByStudentAsync(studentId, ct);
-        return FeeMath.TotalPending(dues);
+        return FeeMath.TotalPending(dues.Where(d => d.DueDate is null || d.DueDate <= today));
     }
 
     public async Task<string> GetReceiptDownloadUrlAsync(Guid paymentTransactionId, Guid? requiredStudentId = null, CancellationToken ct = default)
@@ -188,12 +243,15 @@ public class FeePaymentService : IFeePaymentService
         if (string.IsNullOrEmpty(transaction.ReceiptBlobPath)
             || !await _blobStorage.ExistsAsync(ContainerName, transaction.ReceiptBlobPath, ct))
         {
-
-            // Everything this student still owes, not just the one due this payment went
-            // against -- otherwise clearing a single fee prints "Pending Fee: 0" on the
-            // receipt while other dues are still outstanding.
+            // Everything this student still owes, not just the one fee this payment went
+            // against -- otherwise clearing a single fee prints "Pending: 0" on the receipt
+            // while other fees are still outstanding.
             var pendingAmount = await GetTotalPendingForStudentAsync(payment.StudentId, ct);
-            var document = new ReceiptDocument(transaction.ReceiptNumber, transaction.Amount, transaction.PaymentMethod, transaction.PaidAtUtc, payment.StudentId, _schoolName, pendingAmount);
+            var student = await _students.GetByIdAsync(payment.StudentId, ct);
+            var details = new ReceiptDetails(student?.FullName, student?.AdmissionNumber,
+                student is null ? null : SchoolClasses.NameOf(payment.ClassId ?? student.ClassId),
+                FeeLedgerService.LabelOf(payment), payment.Category, payment.TotalAmount, FeeMath.Pending(payment));
+            var document = new ReceiptDocument(transaction.ReceiptNumber, transaction.Amount, transaction.PaymentMethod, transaction.PaidAtUtc, payment.StudentId, _schoolName, pendingAmount, details);
             var pdfBytes = document.GeneratePdf();
 
             var blobPath = $"{payment.StudentId}/{transaction.Id}.pdf";
@@ -224,7 +282,14 @@ public class FeePaymentService : IFeePaymentService
             throw new InvalidOperationException("No waiver has been requested for this fee payment.");
 
         // Step 2 -- only Principal/Admin reaches this via [Authorize(Roles=...)].
-        await _payments.ApproveWaiverAsync(feePaymentId, request.WaiverAmount, approvedByUserId, ct);
+        if (await _payments.ApproveWaiverAsync(feePaymentId, request.WaiverAmount, approvedByUserId, ct) == 0)
+            throw new InvalidOperationException($"That's more than the ₹{FeeMath.Pending(payment):0.##} still owed on this fee.");
+        await _accounts.AddAdjustmentAsync(new FeeAdjustment
+        {
+            StudentId = payment.StudentId, FeePaymentId = payment.Id, Kind = FeeAdjustmentKinds.WaiverApproved,
+            Amount = request.WaiverAmount, Reason = "Waiver approved", ActorUserId = approvedByUserId
+        }, ct);
+        await _accounts.SaveChangesAsync(ct);
 
         _logger.LogInformation("AUDIT actor={ActorUserId} action=FeePayment.WaiverApproved entity=FeePayment entityId={FeePaymentId} waiverAmount={WaiverAmount}",
             approvedByUserId, feePaymentId, request.WaiverAmount);
@@ -250,12 +315,12 @@ public class FeePaymentService : IFeePaymentService
 
     public async Task<IReadOnlyList<FeePaymentSummary>> AssessDuesAsync(Guid studentId, AssessDuesRequest request, CancellationToken ct = default)
     {
-        // Match the year by meaning: older structures may say "2026-2027" for "2026-27".
+        // The older free-form fee structures. Match the year by meaning ("2026-2027" is "2026-27").
         var structures = (await _structures.FindByClassAsync(request.ClassId, null, ct))
             .Where(s => AcademicYears.Same(s.AcademicYear, request.AcademicYear)).ToList();
         var existing = await _payments.FindByStudentAsync(studentId, ct);
         var existingStructureIds = existing.Where(p => p.FeeStructureId.HasValue).Select(p => p.FeeStructureId!.Value).ToHashSet();
-        var hasOpeningBalance = existing.Any(p => p.FeeStructureId is null);
+        var hasOpeningBalance = existing.Any(p => p.FeeStructureId is null && p.Description != null && p.Description.StartsWith("Opening balance"));
 
         var toCreate = new List<FeePayment>();
 
@@ -267,22 +332,18 @@ public class FeePaymentService : IFeePaymentService
                 StudentId = studentId,
                 FeeStructureId = structure.Id,
                 ClassId = structure.ClassId,
+                AcademicYear = AcademicYears.Normalize(structure.AcademicYear),
+                PeriodLabel = structure.Name.Length <= 50 ? structure.Name : structure.Name[..50],
+                DueDate = structure.DueDateUtc.Date,
                 TotalAmount = structure.Amount
             });
         }
 
         if (request.OpeningBalance is > 0 && !hasOpeningBalance)
         {
-            toCreate.Add(new FeePayment
-            {
-                StudentId = studentId,
-                FeeStructureId = null,
-                ClassId = request.ClassId,
-                Description = string.IsNullOrWhiteSpace(request.OpeningBalanceDescription)
-                    ? "Opening balance (pending fee at admission)"
-                    : request.OpeningBalanceDescription,
-                TotalAmount = request.OpeningBalance.Value
-            });
+            toCreate.Add(NewManualCharge(studentId, request.ClassId, request.OpeningBalance.Value, "Opening balance",
+                string.IsNullOrWhiteSpace(request.OpeningBalanceDescription) ? "Opening balance (pending fee at admission)" : request.OpeningBalanceDescription,
+                Today));
         }
 
         if (toCreate.Count > 0)
@@ -329,13 +390,18 @@ public class FeePaymentService : IFeePaymentService
                 var due = duesById[t.FeePaymentId];
                 return new PaymentTransactionSummary(
                     t.Id, t.FeePaymentId, t.Amount, t.ReceiptNumber, t.PaymentMethod, t.PaidAtUtc,
-                    due.PeriodLabel, due.Description, due.FeeStructure?.Name);
+                    due.PeriodLabel, due.Description ?? FeeLedgerService.LabelOf(due), due.FeeStructure?.Name);
             })
             .ToList();
     }
 
-    private static FeePaymentSummary ToSummary(FeePayment p) =>
-        new(p.Id, p.StudentId, p.FeeStructureId, p.ClassId, p.Description, p.PeriodLabel,
-            p.FeeStructure?.Name, p.FeeStructure?.DueDateUtc,
-            p.TotalAmount, p.PaidAmount, p.WaiverAmount, p.Status);
+    private FeePaymentSummary ToSummary(FeePayment p)
+    {
+        var today = Today;
+        return new(p.Id, p.StudentId, p.FeeStructureId, p.ClassId, p.Description, p.PeriodLabel,
+            p.FeeStructure?.Name ?? FeeLedgerService.LabelOf(p), p.DueDate ?? p.FeeStructure?.DueDateUtc,
+            p.TotalAmount, p.PaidAmount, p.WaiverAmount, p.Status,
+            p.Category, p.AcademicYear, p.PeriodKey, FeeMath.Pending(p),
+            p.DueDate is null || p.DueDate <= today, p.LastPaidAtUtc);
+    }
 }

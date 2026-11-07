@@ -10,15 +10,17 @@ public record FeeStructureSummary(Guid Id, string ClassId, string Name, decimal 
 // exactly one must be supplied. See PaymentsController.RecordPayment.
 public record RecordPaymentRequest(
     [Required] Guid StudentId, Guid? FeeStructureId, Guid? FeePaymentId,
-    [Required] decimal Amount, [Required] string PaymentMethod, string? GatewayReference);
+    [Required, Range(0.01, 10_000_000)] decimal Amount, [Required, StringLength(20)] string PaymentMethod, [StringLength(100)] string? GatewayReference);
 
 public record FeePaymentSummary(
     Guid Id, Guid StudentId, Guid? FeeStructureId, string? ClassId, string? Description, string? PeriodLabel,
     string? FeeStructureName, DateTime? DueDateUtc,
-    decimal TotalAmount, decimal PaidAmount, decimal WaiverAmount, string Status);
+    decimal TotalAmount, decimal PaidAmount, decimal WaiverAmount, string Status,
+    string Category = "Other", string? AcademicYear = null, string? PeriodKey = null,
+    decimal Pending = 0, bool IsDue = true, DateTime? LastPaidAtUtc = null);
 
 public record RequestWaiverRequest([Required] Guid StudentId, [Required] Guid FeeStructureId);
-public record ApproveWaiverRequest([Required] decimal WaiverAmount);
+public record ApproveWaiverRequest([Required, Range(0.01, 10_000_000)] decimal WaiverAmount);
 
 public record CollectionTotalsResponse(DateTime? FromUtc, DateTime? ToUtc, decimal TotalCollected);
 
@@ -36,7 +38,7 @@ public record ClassPendingSummaryResponse(string ClassId, decimal TotalPending, 
 // logging cash handed over for "May 2026 - Jun 2026" tuition. Immediately produces a
 // receipt, same as any other payment.
 public record SubmitFeePaymentRequest(
-    [Required] string ClassId, [Required] decimal Amount, [Required] string PeriodLabel,
+    [Required] string ClassId, [Required, Range(0.01, 10_000_000)] decimal Amount, [Required] string PeriodLabel,
     string? Description, [Required] string PaymentMethod, string? GatewayReference);
 
 public record FeeSubmissionResult(FeePaymentSummary Due, Guid TransactionId, string ReceiptNumber);
@@ -45,7 +47,8 @@ public record FeeSubmissionResult(FeePaymentSummary Due, Guid TransactionId, str
 // route's monthly fee added the moment a student is mapped to that route. Mirrors
 // SubmitFeePaymentRequest minus the payment-method fields, since nothing was paid.
 public record AddAdHocDueRequest(
-    [Required] string ClassId, [Required] decimal Amount, [Required] string PeriodLabel, string? Description);
+    [Required] string ClassId, [Required, Range(0.01, 10_000_000)] decimal Amount, [Required, StringLength(50)] string PeriodLabel,
+    [StringLength(200)] string? Description, DateTime? DueDate = null);
 
 public record PaymentTransactionSummary(
     Guid Id, Guid FeePaymentId, decimal Amount, string ReceiptNumber, string PaymentMethod,

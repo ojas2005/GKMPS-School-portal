@@ -33,5 +33,9 @@ public interface IFeePaymentService
     /// <summary>Creates an unpaid ad-hoc due -- no payment, no receipt, PaidAmount stays 0.
     /// Used when another module's action (e.g. assigning a student to a transport route)
     /// needs to add to the student's pending total without recording money received.</summary>
-    Task<FeePaymentSummary> AddAdHocDueAsync(Guid studentId, AddAdHocDueRequest request, CancellationToken ct = default);
+    Task<FeePaymentSummary> AddAdHocDueAsync(Guid studentId, AddAdHocDueRequest request, Guid? actorUserId = null, string? actorRole = null, CancellationToken ct = default);
+
+    /// <summary>Takes an amount off one fee (a discount or concession), with the reason kept in the fee history.
+    /// Refuses more than the fee still owes.</summary>
+    Task<FeePaymentSummary> ApplyConcessionAsync(Guid feePaymentId, ConcessionRequest request, Guid? actorUserId, string? actorRole, CancellationToken ct = default);
 }

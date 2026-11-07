@@ -118,6 +118,8 @@ public static class DataAccessServiceCollectionExtensions
         // Fee
         services.AddScoped<IFeeStructureRepository, FeeStructureRepository>();
         services.AddScoped<IFeePaymentRepository, FeePaymentRepository>();
+        services.AddScoped<IFeeSetupRepository, FeeSetupRepository>();
+        services.AddScoped<IFeeAccountRepository, FeeAccountRepository>();
         services.AddScoped<IPaymentTransactionRepository, PaymentTransactionRepository>();
         // Communication
         services.AddScoped<IAnnouncementRepository, AnnouncementRepository>();

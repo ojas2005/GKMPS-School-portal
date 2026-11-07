@@ -7,8 +7,6 @@ using SchoolERP.Business.Student.DTOs;
 using SchoolERP.DataAccess.Student.Entities;
 using SchoolERP.DataAccess.Student.Repositories.Interfaces;
 using SchoolERP.Business.Student.Services.Interfaces;
-using SchoolERP.Business.Fee.DTOs;
-using SchoolERP.Business.Fee.Services.Interfaces;
 using SchoolERP.Business.Identity.Services.Interfaces;
 using SchoolERP.Common.Audit;
 
@@ -24,7 +22,6 @@ public class StudentService : IStudentService
     private readonly IStudentRepository _students;
     private readonly IEventPublisher _events;
     private readonly IDistributedCache _cache;
-    private readonly IFeePaymentService _fees;
     private readonly IUserService _users;
     private readonly IAuditTrail _audit;
     private readonly TimeProvider _clock;
@@ -36,7 +33,6 @@ public class StudentService : IStudentService
         IStudentRepository students,
         IEventPublisher events,
         IDistributedCache cache,
-        IFeePaymentService fees,
         IUserService users,
         IAuditTrail audit,
         TimeProvider clock,
@@ -45,14 +41,13 @@ public class StudentService : IStudentService
         _students = students;
         _events = events;
         _cache = cache;
-        _fees = fees;
         _users = users;
         _audit = audit;
         _clock = clock;
         _logger = logger;
     }
 
-    public async Task<AdmittedStudent> AdmitStudentAsync(CreateStudentRequest request, CancellationToken ct = default)
+    public async Task<StudentSummary> CreateAdmissionAsync(CreateStudentRequest request, CancellationToken ct = default)
     {
         // Duplicate-prevention check before insert (mirrors HasStudentReviewed()).
         if (await _students.ExistsByAdmissionNumberAsync(request.AdmissionNumber, ct))
@@ -81,56 +76,17 @@ public class StudentService : IStudentService
 
         await _students.AddAsync(student, ct);
         await _students.SaveChangesAsync(ct);
-
-        var fees = await AssessAdmissionFeesAsync(student, request.PreviousDues, ct);
-
-        // Raised only after the admission is saved; the notification handler emails the parents.
-        await _events.PublishAsync(new StudentEnrolledEvent
-        {
-            StudentId = student.Id,
-            AdmissionNumber = student.AdmissionNumber,
-            FullName = student.FullName,
-            ClassId = student.ClassId,
-            SectionId = student.SectionId,
-            ParentEmails = new[] { student.FatherEmail, student.MotherEmail }
-                .Where(e => !string.IsNullOrWhiteSpace(e)).Select(e => e!).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
-        }, ct);
-
         await _cache.RemoveAsync(ActiveCountsCacheKey, ct);
 
-        _logger.LogInformation("Student admitted: {StudentId} ({AdmissionNumber}), fees pending {Pending}", student.Id, student.AdmissionNumber, fees.TotalPending);
-
-        return new AdmittedStudent(ToSummary(student), fees);
+        _logger.LogInformation("Student record created: {StudentId} ({AdmissionNumber})", student.Id, student.AdmissionNumber);
+        return ToSummary(student);
     }
 
-    /// <summary>
-    /// Puts this year's fee structure for the student's class on their account (and any dues
-    /// carried over), so the pending fee is right from day one. A failure here doesn't undo
-    /// the admission; the warning says what to do instead.
-    /// </summary>
-    private async Task<AdmissionFees> AssessAdmissionFeesAsync(StudentProfile student, decimal? previousDues, CancellationToken ct)
+    public async Task UndoAdmissionAsync(Guid studentId, CancellationToken ct = default)
     {
-        var year = AcademicYears.Current(_clock.GetLocalNow().DateTime);
-        try
-        {
-            var dues = await _fees.AssessDuesAsync(student.Id, new AssessDuesRequest(
-                student.ClassId, year, previousDues is > 0 ? previousDues : null,
-                previousDues is > 0 ? "Previous dues at admission" : null), ct);
-
-            var classFees = dues.Where(d => d.FeeStructureId is not null)
-                .Select(d => new AdmissionFeeLine(d.FeeStructureName ?? d.Description ?? "Fee", d.TotalAmount)).ToList();
-            var carried = dues.Where(d => d.FeeStructureId is null).Sum(d => d.TotalAmount);
-            var warning = classFees.Count == 0
-                ? $"No fee structure is set for this class for {year}, so no class fees were added. Add it under Fees, then use \"Assess dues\" on the student's page."
-                : null;
-            return new AdmissionFees(year, classFees, carried, dues.Sum(d => Math.Max(0, d.TotalAmount - d.PaidAmount - d.WaiverAmount)), warning);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "Fee assessment failed at admission for {StudentId}", student.Id);
-            return new AdmissionFees(year, [], 0, 0,
-                "The student was admitted, but their fees couldn't be added. Use \"Assess dues\" on the student's page.");
-        }
+        await _students.DeleteNewAdmissionAsync(studentId, ct);
+        await _cache.RemoveAsync(ActiveCountsCacheKey, ct);
+        _logger.LogWarning("Admission undone, student record deleted: {StudentId}", studentId);
     }
 
     private static void SetParents(StudentProfile s, string fatherName, string fatherPhone, string? fatherEmail,
@@ -151,6 +107,9 @@ public class StudentService : IStudentService
         var student = await _students.FindByIdAsync(id, ct);
         return student is null ? null : ToSummary(student);
     }
+
+    public async Task<IReadOnlyList<StudentSummary>> GetByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default) =>
+        (await _students.FindByIdsAsync(ids.Distinct().ToList(), ct)).Select(ToSummary).ToList();
 
     public async Task<PagedResult<StudentSummary>> SearchAsync(string? classId, string? sectionId, string? keyword, RosterFilter roster, int page, int pageSize, CancellationToken ct = default)
     {
@@ -176,6 +135,8 @@ public class StudentService : IStudentService
 
         await _students.ReassignClassSectionAsync(studentId, request.ClassId, request.SectionId, ct);
         await _cache.RemoveAsync(ActiveCountsCacheKey, ct);
+        if (before.ClassId != request.ClassId)
+            await _events.PublishAsync(new StudentClassChangedEvent { StudentId = studentId, OldClassId = before.ClassId, NewClassId = request.ClassId }, ct);
 
         _logger.LogInformation(
             "AUDIT actor={ActorUserId} role={ActorRole} action=Student.ReassignClass entity=StudentProfile entityId={StudentId} before={Before} after={After}",
@@ -211,7 +172,10 @@ public class StudentService : IStudentService
         await _students.SaveChangesAsync(ct);
 
         if (classChanged)
+        {
             await _cache.RemoveAsync(ActiveCountsCacheKey, ct);
+            await _events.PublishAsync(new StudentClassChangedEvent { StudentId = studentId, OldClassId = before.ClassId, NewClassId = request.ClassId }, ct);
+        }
 
         _logger.LogInformation(
             "AUDIT actor={ActorUserId} role={ActorRole} action=Student.UpdateDetails entity=StudentProfile entityId={StudentId} before={Before} after={After}",
@@ -270,6 +234,7 @@ public class StudentService : IStudentService
         await _students.SetRemovedAsync(studentId, true, cleanReason, ct);
         await _cache.RemoveAsync(ActiveCountsCacheKey, ct);
         Audit("student.removed", studentId, actorUserId, actorRole, $"admission={student.AdmissionNumber}");
+        await _events.PublishAsync(new StudentStatusChangedEvent { StudentId = studentId, Status = StudentStatuses.Removed }, ct);
 
         student.Status = StudentStatuses.Removed;
         student.RemovedAtUtc = DateTime.UtcNow;
@@ -289,6 +254,7 @@ public class StudentService : IStudentService
         await _students.SetRemovedAsync(studentId, false, null, ct);
         await _cache.RemoveAsync(ActiveCountsCacheKey, ct);
         Audit("student.restored", studentId, actorUserId, actorRole, $"admission={student.AdmissionNumber}");
+        await _events.PublishAsync(new StudentStatusChangedEvent { StudentId = studentId, Status = StudentStatuses.Active }, ct);
 
         student.Status = StudentStatuses.Active;
         student.RemovedAtUtc = null;

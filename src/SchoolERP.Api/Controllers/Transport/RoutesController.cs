@@ -23,6 +23,19 @@ public class RoutesController : ControllerBase
         return Ok(ApiResponse<RouteSummary>.Ok(result, "Route created."));
     }
 
+    // Rename, re-price or switch a route on/off. A new charge applies to transport fees created from now on.
+    [HttpPut("{id:guid}")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateRouteRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _routeService.UpdateAsync(id, request, User.UserId(), User.Role(), ct);
+            return Ok(ApiResponse<RouteSummary>.Ok(result, "Route saved."));
+        }
+        catch (KeyNotFoundException ex) { return NotFound(ApiResponse<object>.Fail(ex.Message)); }
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {

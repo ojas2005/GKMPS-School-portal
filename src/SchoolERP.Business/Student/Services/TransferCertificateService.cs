@@ -90,6 +90,12 @@ public class TransferCertificateService : ITransferCertificateService
         // An approved transfer certificate means the student has left: they drop out of
         // active counts and class lists, and their data can later be erased.
         await _students.UpdateStatusAsync(certificate.StudentId, SchoolERP.DataAccess.Student.Entities.StudentStatuses.TransferredOut, DateTime.UtcNow, ct);
+        // The Fee module stops billing them.
+        await _events.PublishAsync(new StudentStatusChangedEvent
+        {
+            StudentId = certificate.StudentId,
+            Status = SchoolERP.DataAccess.Student.Entities.StudentStatuses.TransferredOut
+        }, ct);
 
         _logger.LogInformation("Transfer certificate approved: {CertificateId} by {ApproverId}", certificateId, approvedByUserId);
 

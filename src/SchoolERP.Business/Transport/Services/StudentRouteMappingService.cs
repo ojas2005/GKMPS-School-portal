@@ -3,56 +3,116 @@ using SchoolERP.Business.Transport.DTOs;
 using SchoolERP.DataAccess.Transport.Entities;
 using SchoolERP.DataAccess.Transport.Repositories.Interfaces;
 using SchoolERP.Business.Transport.Services.Interfaces;
+using SchoolERP.Common.Events;
 
 namespace SchoolERP.Business.Transport.Services;
 
+/// <summary>
+/// Which students use transport and on which route. The Fee module reads this when it creates
+/// each month's transport fee, so moving a student changes the charge from the next fee on
+/// and taking them off transport stops it; fees already created are left as they were.
+/// </summary>
 public class StudentRouteMappingService : IStudentRouteMappingService
 {
-    private readonly IStudentRouteMappingRepository _mappings;
-    private readonly IStudentService _students;
+    private const string PickupToBeConfirmed = "To be confirmed";
 
-    public StudentRouteMappingService(IStudentRouteMappingRepository mappings, IStudentService students)
+    private readonly IStudentRouteMappingRepository _mappings;
+    private readonly IRouteRepository _routes;
+    private readonly IStudentService _students;
+    private readonly IEventPublisher _events;
+
+    public StudentRouteMappingService(IStudentRouteMappingRepository mappings, IRouteRepository routes, IStudentService students, IEventPublisher events)
     {
         _mappings = mappings;
+        _routes = routes;
         _students = students;
+        _events = events;
     }
 
-    public async Task<StudentRouteMappingSummary> AssignAsync(AssignStudentRouteRequest request, CancellationToken ct = default)
+    public async Task<StudentRouteMappingSummary> AssignAsync(AssignStudentRouteRequest request, CancellationToken ct = default, bool announce = true)
     {
+        var route = await _routes.FindByIdAsync(request.RouteId, ct) ?? throw new KeyNotFoundException("Route not found.");
         var existing = await _mappings.FindByStudentIdAsync(request.StudentId, ct);
+        if (!route.IsActive && existing?.RouteId != route.Id)
+            throw new InvalidOperationException($"{route.Name} is switched off; choose an active route.");
+
+        var pickup = string.IsNullOrWhiteSpace(request.PickupPoint) ? existing?.PickupPoint ?? PickupToBeConfirmed : request.PickupPoint.Trim();
         if (existing is not null)
         {
-            await _mappings.ReassignAsync(existing.Id, request.RouteId, request.PickupPoint, ct);
-            return new StudentRouteMappingSummary(existing.Id, request.StudentId, request.RouteId, request.PickupPoint);
+            await _mappings.ReassignAsync(existing.Id, request.RouteId, pickup, ct);
+            if (announce && existing.RouteId != route.Id)
+            {
+                var old = await _routes.FindByIdAsync(existing.RouteId, ct);
+                await _events.PublishAsync(new StudentTransportChangedEvent
+                {
+                    StudentId = request.StudentId, OldRouteName = old?.Name, NewRouteName = route.Name, NewMonthlyFee = route.MonthlyFee
+                }, ct);
+            }
+            return new StudentRouteMappingSummary(existing.Id, request.StudentId, request.RouteId, pickup, existing.AssignedAtUtc);
         }
 
         var mapping = new StudentRouteMapping
         {
             StudentId = request.StudentId,
             RouteId = request.RouteId,
-            PickupPoint = request.PickupPoint
+            PickupPoint = pickup
         };
 
         await _mappings.AddAsync(mapping, ct);
         await _mappings.SaveChangesAsync(ct);
+        if (announce)
+            await _events.PublishAsync(new StudentTransportChangedEvent
+            {
+                StudentId = request.StudentId, NewRouteName = route.Name, NewMonthlyFee = route.MonthlyFee
+            }, ct);
 
-        return new StudentRouteMappingSummary(mapping.Id, mapping.StudentId, mapping.RouteId, mapping.PickupPoint);
+        return new StudentRouteMappingSummary(mapping.Id, mapping.StudentId, mapping.RouteId, mapping.PickupPoint, mapping.AssignedAtUtc);
+    }
+
+    public async Task<StudentTransportSummary?> GetForStudentAsync(Guid studentId, CancellationToken ct = default) =>
+        (await GetForStudentsAsync([studentId], ct)).FirstOrDefault();
+
+    public async Task<IReadOnlyList<StudentTransportSummary>> GetForStudentsAsync(IReadOnlyCollection<Guid> studentIds, CancellationToken ct = default)
+    {
+        var mappings = await _mappings.FindByStudentIdsAsync(studentIds, ct);
+        if (mappings.Count == 0) return [];
+        var routes = (await _routes.GetAllAsync(ct)).ToDictionary(r => r.Id);
+        return mappings
+            .Where(m => routes.ContainsKey(m.RouteId))
+            .Select(m =>
+            {
+                var r = routes[m.RouteId];
+                return new StudentTransportSummary(m.StudentId, r.Id, r.Name, r.MonthlyFee, r.IsActive, m.PickupPoint, m.AssignedAtUtc);
+            })
+            .ToList();
+    }
+
+    public async Task<bool> RemoveForStudentAsync(Guid studentId, CancellationToken ct = default, bool announce = true)
+    {
+        var existing = await _mappings.FindByStudentIdAsync(studentId, ct);
+        if (existing is null) return false;
+        await _mappings.DeleteForStudentAsync(studentId, ct);
+        if (announce)
+        {
+            var old = await _routes.FindByIdAsync(existing.RouteId, ct);
+            await _events.PublishAsync(new StudentTransportChangedEvent { StudentId = studentId, OldRouteName = old?.Name }, ct);
+        }
+        return true;
     }
 
     public async Task<IReadOnlyList<StudentRouteMappingWithNameSummary>> GetByRouteIdAsync(Guid routeId, CancellationToken ct = default)
     {
         var mappings = await _mappings.FindByRouteIdAsync(routeId, ct);
-
-        // A route's roster is small (tens of students), so look students up one by one --
-        // sequentially, because they share this request's database context.
-        var lookups = new List<SchoolERP.Business.Student.DTOs.StudentSummary?>();
-        foreach (var mapping in mappings)
-            lookups.Add(await _students.GetByIdAsync(mapping.StudentId, ct));
+        var students = (await _students.GetByIdsAsync(mappings.Select(m => m.StudentId).ToList(), ct)).ToDictionary(s => s.Id);
 
         return mappings
-            .Zip(lookups, (mapping, student) => new StudentRouteMappingWithNameSummary(
-                mapping.Id, mapping.StudentId, student?.FullName ?? "Unknown student", student?.AdmissionNumber,
-                mapping.RouteId, mapping.PickupPoint))
+            .Select(mapping =>
+            {
+                var student = students.GetValueOrDefault(mapping.StudentId);
+                return new StudentRouteMappingWithNameSummary(
+                    mapping.Id, mapping.StudentId, student?.FullName ?? "Unknown student", student?.AdmissionNumber,
+                    mapping.RouteId, mapping.PickupPoint);
+            })
             .ToList();
     }
 }

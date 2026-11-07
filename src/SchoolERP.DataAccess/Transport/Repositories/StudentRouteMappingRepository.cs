@@ -21,6 +21,12 @@ public class StudentRouteMappingRepository : IStudentRouteMappingRepository
     public Task<bool> ExistsForStudentAsync(Guid studentId, CancellationToken ct = default) =>
         _db.StudentRouteMappings.AnyAsync(m => m.StudentId == studentId, ct);
 
+    public async Task<IReadOnlyList<StudentRouteMapping>> FindByStudentIdsAsync(IReadOnlyCollection<Guid> studentIds, CancellationToken ct = default) =>
+        studentIds.Count == 0 ? [] : await _db.StudentRouteMappings.Where(m => studentIds.Contains(m.StudentId)).ToListAsync(ct);
+
+    public Task<int> DeleteForStudentAsync(Guid studentId, CancellationToken ct = default) =>
+        _db.StudentRouteMappings.Where(m => m.StudentId == studentId).ExecuteDeleteAsync(ct);
+
     public async Task AddAsync(StudentRouteMapping mapping, CancellationToken ct = default) =>
         await _db.StudentRouteMappings.AddAsync(mapping, ct);
 

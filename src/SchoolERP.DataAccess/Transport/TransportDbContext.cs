@@ -18,6 +18,14 @@ public class TransportDbContext : DbContext
     {
         modelBuilder.UseCollation("utf8mb4_general_ci");
 
+        modelBuilder.Entity<RouteEntity>(entity =>
+        {
+            entity.Property(r => r.Name).HasMaxLength(100);
+            entity.Property(r => r.StartPoint).HasMaxLength(200);
+            entity.Property(r => r.EndPoint).HasMaxLength(200);
+            entity.Property(r => r.IsActive).HasDefaultValue(true);
+        });
+
         modelBuilder.Entity<Vehicle>(entity =>
         {
             entity.HasIndex(v => v.RegistrationNumber).IsUnique();

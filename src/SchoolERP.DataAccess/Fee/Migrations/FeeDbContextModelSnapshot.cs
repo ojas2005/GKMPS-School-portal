@@ -18,7 +18,7 @@ namespace SchoolERP.DataAccess.Fee.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .UseCollation("utf8mb4_general_ci")
-                .HasAnnotation("ProductVersion", "9.0.0")
+                .HasAnnotation("ProductVersion", "9.0.20")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
@@ -75,6 +75,103 @@ namespace SchoolERP.DataAccess.Fee.Migrations
                     b.ToTable("AuditLogs", (string)null);
                 });
 
+            modelBuilder.Entity("SchoolERP.DataAccess.Fee.Entities.ClassFeeRate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
+
+                    b.Property<decimal>("AdmissionFee")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<decimal>("AnnualExamFee")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<string>("ClassId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<decimal>("HalfYearlyExamFee")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<decimal>("MonthlyTuition")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<decimal>("QuarterlyExamFee")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClassId")
+                        .IsUnique();
+
+                    b.ToTable("ClassFeeRates");
+                });
+
+            modelBuilder.Entity("SchoolERP.DataAccess.Fee.Entities.FeeAdjustment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
+
+                    b.Property<string>("ActorRole")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(65,30)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid?>("FeePaymentId")
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FeePaymentId");
+
+                    b.HasIndex("StudentId");
+
+                    b.ToTable("FeeAdjustments");
+                });
+
             modelBuilder.Entity("SchoolERP.DataAccess.Fee.Entities.FeePayment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -82,14 +179,30 @@ namespace SchoolERP.DataAccess.Fee.Migrations
                         .HasColumnType("char(36)")
                         .UseCollation("ascii_bin");
 
+                    b.Property<string>("AcademicYear")
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)")
+                        .HasDefaultValue("Other");
+
                     b.Property<string>("ClassId")
-                        .HasColumnType("varchar(255)");
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime(6)");
 
                     b.Property<string>("Description")
-                        .HasColumnType("longtext");
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<DateTime?>("DueDate")
+                        .HasColumnType("date");
 
                     b.Property<Guid?>("FeeStructureId")
                         .HasColumnType("char(36)")
@@ -104,8 +217,15 @@ namespace SchoolERP.DataAccess.Fee.Migrations
                     b.Property<bool>("IsWaiverRequested")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<DateTime?>("LastPaidAtUtc")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<decimal>("PaidAmount")
                         .HasColumnType("decimal(65,30)");
+
+                    b.Property<string>("PeriodKey")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
 
                     b.Property<string>("PeriodLabel")
                         .HasMaxLength(50)
@@ -132,12 +252,61 @@ namespace SchoolERP.DataAccess.Fee.Migrations
 
                     b.HasIndex("ClassId");
 
+                    b.HasIndex("DueDate");
+
                     b.HasIndex("FeeStructureId");
+
+                    b.HasIndex("Category", "AcademicYear");
 
                     b.HasIndex("StudentId", "FeeStructureId")
                         .IsUnique();
 
+                    b.HasIndex("StudentId", "Category", "AcademicYear", "PeriodKey")
+                        .IsUnique();
+
                     b.ToTable("FeePayments");
+                });
+
+            modelBuilder.Entity("SchoolERP.DataAccess.Fee.Entities.FeeSchedule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
+
+                    b.Property<int>("AnnualExamDueDay")
+                        .HasColumnType("int");
+
+                    b.Property<int>("AnnualExamDueMonth")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("HalfYearlyExamDueDay")
+                        .HasColumnType("int");
+
+                    b.Property<int>("HalfYearlyExamDueMonth")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<int>("MonthlyDueDay")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuarterlyExamDueDay")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QuarterlyExamDueMonth")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("FeeSchedules");
                 });
 
             modelBuilder.Entity("SchoolERP.DataAccess.Fee.Entities.FeeStructure", b =>
@@ -226,10 +395,58 @@ namespace SchoolERP.DataAccess.Fee.Migrations
 
                     b.HasIndex("FeePaymentId");
 
+                    b.HasIndex("PaidAtUtc");
+
                     b.HasIndex("ReceiptNumber")
                         .IsUnique();
 
                     b.ToTable("PaymentTransactions");
+                });
+
+            modelBuilder.Entity("SchoolERP.DataAccess.Fee.Entities.StudentFeeAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
+
+                    b.Property<DateTime>("BillingStartDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime?>("ClosedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("ClosedReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<bool>("IsOpen")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime?>("LastGeneratedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("char(36)")
+                        .UseCollation("ascii_bin");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsOpen");
+
+                    b.HasIndex("StudentId")
+                        .IsUnique();
+
+                    b.ToTable("StudentFeeAccounts");
                 });
 
             modelBuilder.Entity("SchoolERP.DataAccess.Fee.Entities.FeePayment", b =>

@@ -29,6 +29,24 @@ public static class DatabaseInitializer
         }
 
         SeedOwner(app, scope.ServiceProvider.GetRequiredService<IdentityDbContext>());
+        SeedSchoolDefaults(app, scope.ServiceProvider);
+    }
+
+    // The fee structure's starting amounts for every class, the due-date schedule, and the ten
+    // starting transport routes -- each only where nothing exists yet, so the school's own
+    // changes are never overwritten. A failure here doesn't stop the app; the fee pages create
+    // missing defaults again when first opened.
+    private static void SeedSchoolDefaults(WebApplication app, IServiceProvider services)
+    {
+        try
+        {
+            services.GetRequiredService<SchoolERP.Business.Fee.Services.Interfaces.IFeeSetupService>().EnsureDefaultsAsync().GetAwaiter().GetResult();
+            services.GetRequiredService<SchoolERP.Business.Transport.Services.Interfaces.IRouteService>().EnsureDefaultsAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "Couldn't create the default fee structure or routes; will retry on next start");
+        }
     }
 
     // Every startup -- including each wake from scale-to-zero -- used to run Migrate() on all
