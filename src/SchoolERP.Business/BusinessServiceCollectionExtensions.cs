@@ -86,6 +86,11 @@ public static class BusinessServiceCollectionExtensions
         // Fee
         services.AddScoped<IFeeStructureService, FeeStructureService>();
         services.AddScoped<IFeePaymentService, FeePaymentService>();
+        services.AddScoped<IFeeSetupService, FeeSetupService>();
+        services.AddScoped<IFeeAccountService, FeeAccountService>();
+        services.AddScoped<IFeeLedgerService, FeeLedgerService>();
+        services.AddHostedService<SchoolERP.Business.Fee.FeeBillingWorker>();
+        services.AddScoped<SchoolERP.Business.Admissions.AdmissionService>();
         // Communication
         services.AddScoped<IAnnouncementService, AnnouncementService>();
         services.AddScoped<IParentMessageService, ParentMessageService>();
@@ -113,6 +118,8 @@ public static class BusinessServiceCollectionExtensions
         services.AddScoped<IEventHandler<UserRegisteredEvent>, UserRegisteredHandler>();
         services.AddScoped<IEventHandler<StudentEnrolledEvent>, StudentEnrolledHandler>();
         services.AddScoped<IEventHandler<FeePaidEvent>, FeePaidHandler>();
+        services.AddScoped<IEventHandler<StudentStatusChangedEvent>, SchoolERP.Business.Fee.Handlers.StudentStatusChangedFeeHandler>();
+        services.AddScoped<IEventHandler<StudentClassChangedEvent>, SchoolERP.Business.Fee.Handlers.StudentClassChangedFeeHandler>();
         services.AddScoped<IEventHandler<CertificateGeneratedEvent>, CertificateGeneratedHandler>();
 
         return services;

@@ -6,6 +6,7 @@ namespace SchoolERP.DataAccess.Student.Repositories.Interfaces;
 public interface IStudentRepository
 {
     Task<StudentProfile?> FindByIdAsync(Guid id, CancellationToken ct = default);
+    Task<IReadOnlyList<StudentProfile>> FindByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default);
 
     /// <summary>The student whose own login is <paramref name="userId"/>.</summary>
     Task<StudentProfile?> FindByLinkedUserAsync(Guid userId, CancellationToken ct = default);
@@ -18,6 +19,10 @@ public interface IStudentRepository
     Task<bool> ExistsByAdmissionNumberAsync(string admissionNumber, CancellationToken ct = default);
 
     Task AddAsync(StudentProfile student, CancellationToken ct = default);
+
+    /// <summary>Hard delete of a student record with nothing attached yet -- only for undoing an
+    /// admission that couldn't be completed (e.g. the fee account failed to open).</summary>
+    Task<int> DeleteNewAdmissionAsync(Guid studentId, CancellationToken ct = default);
 
     /// <summary>Atomic class/section reassignment -- no load-then-save.</summary>
     Task<int> ReassignClassSectionAsync(Guid studentId, string classId, string sectionId, CancellationToken ct = default);

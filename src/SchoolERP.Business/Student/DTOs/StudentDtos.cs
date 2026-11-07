@@ -21,7 +21,10 @@ public record CreateStudentRequest(
     [EmailAddress, StringLength(256), Display(Name = "Mother's email")] string? MotherEmail,
     [StringLength(500), Display(Name = "Address")] string? Address,
     // Fees still owed from before (an earlier school or year), on top of this class's fees.
-    [Range(0, 10_000_000), Display(Name = "Previous dues")] decimal? PreviousDues = null);
+    [Range(0, 10_000_000), Display(Name = "Previous dues")] decimal? PreviousDues = null,
+    // Transport: a route means the student uses it, and its monthly charge is billed with tuition.
+    Guid? RouteId = null,
+    [StringLength(200), Display(Name = "Pickup point")] string? PickupPoint = null);
 
 public record ReassignClassRequest([Required] string ClassId, [Required] string SectionId);
 
@@ -68,15 +71,8 @@ public record StudentSummary(
     };
 }
 
-/// <summary>What admission put on the student's fee account.</summary>
-public record AdmissionFees(
-    string AcademicYear, IReadOnlyList<AdmissionFeeLine> ClassFees, decimal PreviousDues, decimal TotalPending,
-    // Set when nothing could be assessed, e.g. no fee structure for the class this year.
-    string? Warning);
-
-public record AdmissionFeeLine(string Name, decimal Amount);
-
-public record AdmittedStudent(StudentSummary Student, AdmissionFees Fees);
+/// <summary>The new student and what admission put on their fee account.</summary>
+public record AdmittedStudent(StudentSummary Student, SchoolERP.Business.Fee.DTOs.FeeBreakdown Fees);
 
 public record RemoveStudentRequest([StringLength(500)] string? Reason);
 

@@ -11,6 +11,10 @@ public class FeeDbContext : DbContext
     public DbSet<FeeStructure> FeeStructures => Set<FeeStructure>();
     public DbSet<FeePayment> FeePayments => Set<FeePayment>();
     public DbSet<PaymentTransaction> PaymentTransactions => Set<PaymentTransaction>();
+    public DbSet<ClassFeeRate> ClassFeeRates => Set<ClassFeeRate>();
+    public DbSet<FeeSchedule> FeeSchedules => Set<FeeSchedule>();
+    public DbSet<StudentFeeAccount> StudentFeeAccounts => Set<StudentFeeAccount>();
+    public DbSet<FeeAdjustment> FeeAdjustments => Set<FeeAdjustment>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -24,12 +28,20 @@ public class FeeDbContext : DbContext
 
         modelBuilder.Entity<FeePayment>(entity =>
         {
-            // MySQL/TiDB treats NULLs as distinct in a unique index, so multiple ad-hoc
-            // (FeeStructureId == null) rows per student are still allowed here -- the
-            // "only one opening balance per student" rule is enforced in the service layer.
+            // MySQL/TiDB treats NULLs as distinct in a unique index, so charges added by hand
+            // (no FeeStructureId, no PeriodKey) can repeat; generated fees can't.
             entity.HasIndex(p => new { p.StudentId, p.FeeStructureId }).IsUnique();
+            entity.HasIndex(p => new { p.StudentId, p.Category, p.AcademicYear, p.PeriodKey }).IsUnique();
             entity.HasIndex(p => p.ClassId); // backs the owner's pending-by-class summary
+            entity.HasIndex(p => p.DueDate);
+            entity.HasIndex(p => new { p.Category, p.AcademicYear });
+            entity.Property(p => p.ClassId).HasMaxLength(64);
+            entity.Property(p => p.Category).HasMaxLength(20).IsRequired().HasDefaultValue(FeeCategories.Other);
+            entity.Property(p => p.AcademicYear).HasMaxLength(10);
+            entity.Property(p => p.PeriodKey).HasMaxLength(20);
             entity.Property(p => p.PeriodLabel).HasMaxLength(50);
+            entity.Property(p => p.Description).HasMaxLength(200);
+            entity.Property(p => p.DueDate).HasColumnType("date");
             entity.Ignore(p => p.Status); // computed, not persisted
             entity.HasOne(p => p.FeeStructure)
                   .WithMany()
@@ -42,7 +54,31 @@ public class FeeDbContext : DbContext
         {
             entity.HasIndex(t => t.ReceiptNumber).IsUnique();
             entity.HasIndex(t => t.FeePaymentId);
+            entity.HasIndex(t => t.PaidAtUtc);
             entity.Property(t => t.ReceiptNumber).HasMaxLength(64).IsRequired();
+        });
+
+        modelBuilder.Entity<ClassFeeRate>(entity =>
+        {
+            entity.HasIndex(r => r.ClassId).IsUnique();
+            entity.Property(r => r.ClassId).HasMaxLength(64);
+        });
+
+        modelBuilder.Entity<StudentFeeAccount>(entity =>
+        {
+            entity.HasIndex(a => a.StudentId).IsUnique();
+            entity.HasIndex(a => a.IsOpen);
+            entity.Property(a => a.BillingStartDate).HasColumnType("date");
+            entity.Property(a => a.ClosedReason).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<FeeAdjustment>(entity =>
+        {
+            entity.HasIndex(a => a.StudentId);
+            entity.HasIndex(a => a.FeePaymentId);
+            entity.Property(a => a.Kind).HasMaxLength(30);
+            entity.Property(a => a.Reason).HasMaxLength(500);
+            entity.Property(a => a.ActorRole).HasMaxLength(50);
         });
 
         modelBuilder.Entity<AuditLog>(entity =>

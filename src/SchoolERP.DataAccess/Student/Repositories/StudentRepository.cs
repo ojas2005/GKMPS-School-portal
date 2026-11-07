@@ -15,6 +15,9 @@ public class StudentRepository : IStudentRepository
     public Task<StudentProfile?> FindByIdAsync(Guid id, CancellationToken ct = default) =>
         _db.Students.FirstOrDefaultAsync(s => s.Id == id, ct);
 
+    public async Task<IReadOnlyList<StudentProfile>> FindByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default) =>
+        ids.Count == 0 ? [] : await _db.Students.AsNoTracking().Where(s => ids.Contains(s.Id)).ToListAsync(ct);
+
     public Task<StudentProfile?> FindByLinkedUserAsync(Guid userId, CancellationToken ct = default) =>
         _db.Students.AsNoTracking().FirstOrDefaultAsync(s => s.LinkedUserId == userId, ct);
 
@@ -58,6 +61,16 @@ public class StudentRepository : IStudentRepository
 
     public Task<bool> ExistsByAdmissionNumberAsync(string admissionNumber, CancellationToken ct = default) =>
         _db.Students.AnyAsync(s => s.AdmissionNumber == admissionNumber, ct);
+
+    public async Task<int> DeleteNewAdmissionAsync(Guid studentId, CancellationToken ct = default)
+    {
+        // Only a bare record: anything attached (documents, a certificate) means it's real.
+        if (await _db.Documents.IgnoreQueryFilters().AnyAsync(d => d.StudentId == studentId, ct)
+            || await _db.TransferCertificates.IgnoreQueryFilters().AnyAsync(t => t.StudentId == studentId, ct))
+            throw new InvalidOperationException("This student already has records attached and can't be deleted.");
+        _db.ChangeTracker.Clear();
+        return await _db.Students.IgnoreQueryFilters().Where(s => s.Id == studentId).ExecuteDeleteAsync(ct);
+    }
 
     public async Task AddAsync(StudentProfile student, CancellationToken ct = default) =>
         await _db.Students.AddAsync(student, ct);

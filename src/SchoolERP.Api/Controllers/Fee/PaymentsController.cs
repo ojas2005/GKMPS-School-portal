@@ -31,6 +31,10 @@ public class PaymentsController : ControllerBase
         {
             return NotFound(ApiResponse<object>.Fail(ex.Message));
         }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ApiResponse<object>.Fail(ex.Message));
+        }
     }
 
     // A student's own fee ledger. Staff/accountant may read any student; a
@@ -72,8 +76,12 @@ public class PaymentsController : ControllerBase
     [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Accountant}")]
     public async Task<IActionResult> SubmitPayment(Guid studentId, [FromBody] SubmitFeePaymentRequest request, CancellationToken ct)
     {
-        var result = await _feePaymentService.SubmitPaymentAsync(studentId, request, ct);
-        return Ok(ApiResponse<FeeSubmissionResult>.Ok(result, "Fee submitted."));
+        try
+        {
+            var result = await _feePaymentService.SubmitPaymentAsync(studentId, request, ct);
+            return Ok(ApiResponse<FeeSubmissionResult>.Ok(result, "Fee submitted."));
+        }
+        catch (InvalidOperationException ex) { return Conflict(ApiResponse<object>.Fail(ex.Message)); }
     }
 
     // Creates an unpaid ad-hoc due (no payment, no receipt) -- e.g. a transport route's
@@ -82,8 +90,22 @@ public class PaymentsController : ControllerBase
     [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin},{RoleNames.Accountant}")]
     public async Task<IActionResult> AddAdHocDue(Guid studentId, [FromBody] AddAdHocDueRequest request, CancellationToken ct)
     {
-        var result = await _feePaymentService.AddAdHocDueAsync(studentId, request, ct);
-        return Ok(ApiResponse<FeePaymentSummary>.Ok(result, "Due added."));
+        var result = await _feePaymentService.AddAdHocDueAsync(studentId, request, User.UserId(), User.Role(), ct);
+        return Ok(ApiResponse<FeePaymentSummary>.Ok(result, "Charge added."));
+    }
+
+    // A discount or concession on one fee, with its reason kept in the fee history.
+    [HttpPost("{feePaymentId:guid}/concession")]
+    [Authorize(Roles = $"{RoleNames.SuperAdmin},{RoleNames.Principal},{RoleNames.Admin}")]
+    public async Task<IActionResult> ApplyConcession(Guid feePaymentId, [FromBody] ConcessionRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _feePaymentService.ApplyConcessionAsync(feePaymentId, request, User.UserId(), User.Role(), ct);
+            return Ok(ApiResponse<FeePaymentSummary>.Ok(result, "Concession applied."));
+        }
+        catch (KeyNotFoundException ex) { return NotFound(ApiResponse<object>.Fail(ex.Message)); }
+        catch (InvalidOperationException ex) { return Conflict(ApiResponse<object>.Fail(ex.Message)); }
     }
 
     // Every receipt for a student -- staff/teacher for any student, a student/parent
