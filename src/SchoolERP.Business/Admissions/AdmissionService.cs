@@ -55,7 +55,7 @@ public class AdmissionService
             // 3. Transport, then 4. the fee account and its first fees (one transaction in the fee database).
             if (request.RouteId is { } routeId)
             {
-                await _transport.AssignAsync(new AssignStudentRouteRequest(student.Id, routeId, request.PickupPoint), ct);
+                await _transport.AssignAsync(new AssignStudentRouteRequest(student.Id, routeId, request.PickupPoint), ct, announce: false);
                 routeAssigned = true;
             }
 
@@ -96,7 +96,7 @@ public class AdmissionService
 
         if (routeAssigned)
         {
-            try { await _transport.RemoveForStudentAsync(studentId, none); }
+            try { await _transport.RemoveForStudentAsync(studentId, none, announce: false); }
             catch (Exception ex) { _logger.LogError(ex, "Undo: couldn't remove the route of {StudentId}", studentId); }
         }
 

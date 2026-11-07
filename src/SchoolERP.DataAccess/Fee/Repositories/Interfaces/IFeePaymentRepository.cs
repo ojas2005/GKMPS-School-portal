@@ -17,6 +17,8 @@ public sealed record FeeEntryFilter
     public string? Status { get; init; }
     /// <summary>Hide fees that haven't fallen due yet (on or before this date counts as due).</summary>
     public DateTime? DueOnOrBefore { get; init; }
+    /// <summary>Per-student totals: only students who owe something now.</summary>
+    public bool OnlyOwing { get; init; }
     /// <summary>The school's today, for Overdue.</summary>
     public DateTime Today { get; init; }
 }

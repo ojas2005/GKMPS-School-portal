@@ -33,3 +33,14 @@ public class StudentClassChangedFeeHandler : IEventHandler<StudentClassChangedEv
     public Task HandleAsync(StudentClassChangedEvent e, CancellationToken ct) =>
         _accounts.RepriceUpcomingAsync(e.StudentId, e.NewClassId, ct);
 }
+
+/// <summary>Route changes go into the student's fee history (the charges themselves follow on the next transport fee).</summary>
+public class StudentTransportChangedFeeHandler : IEventHandler<StudentTransportChangedEvent>
+{
+    private readonly IFeeAccountService _accounts;
+
+    public StudentTransportChangedFeeHandler(IFeeAccountService accounts) => _accounts = accounts;
+
+    public Task HandleAsync(StudentTransportChangedEvent e, CancellationToken ct) =>
+        _accounts.RecordTransportChangeAsync(e.StudentId, e.OldRouteName, e.NewRouteName, e.NewMonthlyFee, ct);
+}

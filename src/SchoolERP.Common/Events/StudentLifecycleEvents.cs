@@ -22,3 +22,16 @@ public record StudentClassChangedEvent
     public required string NewClassId { get; init; }
     public DateTime ChangedAtUtc { get; init; } = DateTime.UtcNow;
 }
+
+/// <summary>
+/// Raised by the Transport module when a student is put on a route, moved to another, or
+/// taken off transport (NewRouteName null). The Fee module records it in the fee history.
+/// </summary>
+public record StudentTransportChangedEvent
+{
+    public Guid StudentId { get; init; }
+    public string? OldRouteName { get; init; }
+    public string? NewRouteName { get; init; }
+    public decimal NewMonthlyFee { get; init; }
+    public DateTime ChangedAtUtc { get; init; } = DateTime.UtcNow;
+}

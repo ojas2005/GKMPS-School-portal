@@ -55,13 +55,15 @@ public class FeePaymentRepository : IFeePaymentRepository
             {
                 StudentId = g.Key,
                 ClassId = g.Max(p => p.ClassId),
-                Billed = g.Sum(p => p.TotalAmount),
+                // Fees already due, so Billed = Paid + Discount + Pending; upcoming has its own column.
+                Billed = g.Sum(p => p.DueDate == null || p.DueDate <= today ? p.TotalAmount : 0),
                 Paid = g.Sum(p => p.PaidAmount),
                 Discount = g.Sum(p => p.WaiverAmount),
                 PendingDue = g.Sum(p => p.DueDate == null || p.DueDate <= today ? p.TotalAmount - p.PaidAmount - p.WaiverAmount : 0),
                 Upcoming = g.Sum(p => p.DueDate != null && p.DueDate > today ? p.TotalAmount - p.PaidAmount - p.WaiverAmount : 0),
                 OldestUnpaid = g.Where(p => p.TotalAmount > p.PaidAmount + p.WaiverAmount).Min(p => p.DueDate)
             });
+        if (filter.OnlyOwing) grouped = grouped.Where(r => r.PendingDue > 0);
 
         var total = await grouped.CountAsync(ct);
         var rows = await grouped

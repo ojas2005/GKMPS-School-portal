@@ -47,4 +47,5 @@ public static class FeeAdjustmentKinds
     public const string AccountOpened = "AccountOpened";
     public const string AccountClosed = "AccountClosed";
     public const string AccountReopened = "AccountReopened";
+    public const string TransportChanged = "TransportChanged";
 }

@@ -186,6 +186,7 @@ public class FeeLedgerService : IFeeLedgerService
             DueYear = dueYear, DueMonth = dueMonth,
             Status = string.IsNullOrWhiteSpace(q.Status) ? null : q.Status,
             DueOnOrBefore = q.IncludeUpcoming ? null : today,
+            OnlyOwing = q.OnlyOwing,
             Today = today
         };
     }

@@ -120,6 +120,7 @@ public static class BusinessServiceCollectionExtensions
         services.AddScoped<IEventHandler<FeePaidEvent>, FeePaidHandler>();
         services.AddScoped<IEventHandler<StudentStatusChangedEvent>, SchoolERP.Business.Fee.Handlers.StudentStatusChangedFeeHandler>();
         services.AddScoped<IEventHandler<StudentClassChangedEvent>, SchoolERP.Business.Fee.Handlers.StudentClassChangedFeeHandler>();
+        services.AddScoped<IEventHandler<StudentTransportChangedEvent>, SchoolERP.Business.Fee.Handlers.StudentTransportChangedFeeHandler>();
         services.AddScoped<IEventHandler<CertificateGeneratedEvent>, CertificateGeneratedHandler>();
 
         return services;

@@ -237,6 +237,23 @@ public class FeeAccountService : IFeeAccountService
         return repriced;
     }
 
+    public async Task RecordTransportChangeAsync(Guid studentId, string? oldRoute, string? newRoute, decimal newMonthlyFee, CancellationToken ct = default)
+    {
+        if (await _accounts.FindByStudentAsync(studentId, ct) is null) return;
+        var fee = FeeRates.Inr(newMonthlyFee);
+        await _accounts.AddAdjustmentAsync(new FeeAdjustment
+        {
+            StudentId = studentId, Kind = FeeAdjustmentKinds.TransportChanged, Amount = newRoute is null ? 0 : fee,
+            Reason = (oldRoute, newRoute) switch
+            {
+                (null, not null) => $"Transport started on {newRoute} (₹{fee:0.##}/month) from the next transport fee",
+                (not null, null) => $"Transport stopped (was {oldRoute}); no more transport fees",
+                _ => $"Route changed from {oldRoute} to {newRoute} (₹{fee:0.##}/month) from the next transport fee"
+            }
+        }, ct);
+        await _accounts.SaveChangesAsync(ct);
+    }
+
     public async Task<FeeGenerationResult> GenerateDueFeesAsync(Guid? studentId = null, CancellationToken ct = default)
     {
         IReadOnlyList<StudentFeeAccount> accounts = studentId is { } one

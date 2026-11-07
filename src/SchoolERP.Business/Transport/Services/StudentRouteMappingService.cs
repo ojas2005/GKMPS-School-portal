@@ -3,6 +3,7 @@ using SchoolERP.Business.Transport.DTOs;
 using SchoolERP.DataAccess.Transport.Entities;
 using SchoolERP.DataAccess.Transport.Repositories.Interfaces;
 using SchoolERP.Business.Transport.Services.Interfaces;
+using SchoolERP.Common.Events;
 
 namespace SchoolERP.Business.Transport.Services;
 
@@ -18,15 +19,17 @@ public class StudentRouteMappingService : IStudentRouteMappingService
     private readonly IStudentRouteMappingRepository _mappings;
     private readonly IRouteRepository _routes;
     private readonly IStudentService _students;
+    private readonly IEventPublisher _events;
 
-    public StudentRouteMappingService(IStudentRouteMappingRepository mappings, IRouteRepository routes, IStudentService students)
+    public StudentRouteMappingService(IStudentRouteMappingRepository mappings, IRouteRepository routes, IStudentService students, IEventPublisher events)
     {
         _mappings = mappings;
         _routes = routes;
         _students = students;
+        _events = events;
     }
 
-    public async Task<StudentRouteMappingSummary> AssignAsync(AssignStudentRouteRequest request, CancellationToken ct = default)
+    public async Task<StudentRouteMappingSummary> AssignAsync(AssignStudentRouteRequest request, CancellationToken ct = default, bool announce = true)
     {
         var route = await _routes.FindByIdAsync(request.RouteId, ct) ?? throw new KeyNotFoundException("Route not found.");
         var existing = await _mappings.FindByStudentIdAsync(request.StudentId, ct);
@@ -37,6 +40,14 @@ public class StudentRouteMappingService : IStudentRouteMappingService
         if (existing is not null)
         {
             await _mappings.ReassignAsync(existing.Id, request.RouteId, pickup, ct);
+            if (announce && existing.RouteId != route.Id)
+            {
+                var old = await _routes.FindByIdAsync(existing.RouteId, ct);
+                await _events.PublishAsync(new StudentTransportChangedEvent
+                {
+                    StudentId = request.StudentId, OldRouteName = old?.Name, NewRouteName = route.Name, NewMonthlyFee = route.MonthlyFee
+                }, ct);
+            }
             return new StudentRouteMappingSummary(existing.Id, request.StudentId, request.RouteId, pickup, existing.AssignedAtUtc);
         }
 
@@ -49,6 +60,11 @@ public class StudentRouteMappingService : IStudentRouteMappingService
 
         await _mappings.AddAsync(mapping, ct);
         await _mappings.SaveChangesAsync(ct);
+        if (announce)
+            await _events.PublishAsync(new StudentTransportChangedEvent
+            {
+                StudentId = request.StudentId, NewRouteName = route.Name, NewMonthlyFee = route.MonthlyFee
+            }, ct);
 
         return new StudentRouteMappingSummary(mapping.Id, mapping.StudentId, mapping.RouteId, mapping.PickupPoint, mapping.AssignedAtUtc);
     }
@@ -71,8 +87,18 @@ public class StudentRouteMappingService : IStudentRouteMappingService
             .ToList();
     }
 
-    public async Task<bool> RemoveForStudentAsync(Guid studentId, CancellationToken ct = default) =>
-        await _mappings.DeleteForStudentAsync(studentId, ct) > 0;
+    public async Task<bool> RemoveForStudentAsync(Guid studentId, CancellationToken ct = default, bool announce = true)
+    {
+        var existing = await _mappings.FindByStudentIdAsync(studentId, ct);
+        if (existing is null) return false;
+        await _mappings.DeleteForStudentAsync(studentId, ct);
+        if (announce)
+        {
+            var old = await _routes.FindByIdAsync(existing.RouteId, ct);
+            await _events.PublishAsync(new StudentTransportChangedEvent { StudentId = studentId, OldRouteName = old?.Name }, ct);
+        }
+        return true;
+    }
 
     public async Task<IReadOnlyList<StudentRouteMappingWithNameSummary>> GetByRouteIdAsync(Guid routeId, CancellationToken ct = default)
     {

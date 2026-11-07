@@ -32,6 +32,9 @@ public interface IFeeAccountService
     /// <summary>After a class change: re-prices the student's fees not yet due and untouched to the new class's rates.</summary>
     Task<int> RepriceUpcomingAsync(Guid studentId, string newClassId, CancellationToken ct = default);
 
+    /// <summary>Writes a route change (or transport starting/stopping) into the fee history. No-op without an account.</summary>
+    Task RecordTransportChangeAsync(Guid studentId, string? oldRoute, string? newRoute, decimal newMonthlyFee, CancellationToken ct = default);
+
     /// <summary>Brings accounts up to date: creates every monthly and exam fee that should exist by today. Safe to run any time.</summary>
     Task<FeeGenerationResult> GenerateDueFeesAsync(Guid? studentId = null, CancellationToken ct = default);
 }

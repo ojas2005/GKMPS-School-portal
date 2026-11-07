@@ -78,7 +78,9 @@ public record FeeEntryQuery(
     /// <summary>Pending, PartiallyPaid, Paid, Outstanding or Overdue.</summary>
     string? Status = null,
     bool IncludeUpcoming = true,
-    int Page = 1, int PageSize = 50);
+    int Page = 1, int PageSize = 50,
+    /// <summary>By-student list: only students who owe something now.</summary>
+    bool OnlyOwing = false);
 
 public record OpenFeeAccountRequest(
     /// <summary>First day to bill; today if omitted. Months before it are never charged.</summary>
